@@ -1,0 +1,11 @@
+bin/
+obj/
+output/
+agent-file-memory/
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+appsettings.Development.json
+.env

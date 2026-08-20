@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "NarrationStudio": {
+      "commandName": "Project",
+      "commandLineArgs": "",
+      "workingDirectory": "$(ProjectDir)..\\.."
+    }
+  }
+}

@@ -1,0 +1,226 @@
+In the world of information systems, since the mid-60s, the approach taken is topical.
+Why?
+Because computer science and the field of information technology demands that the user
+must define the requirements.
+
+Unfortunately in those early years, even up to now, the guy defining the requirements
+will inevitably be topical.
+
+He just focuses on his section, right?
+And IT have been successful in providing services to this topical user.
+
+Now, as we go on, the process of systemic became a process of discovery.
+
+Until 1980 or late '79, when in Germany, the founders of SAP spin off to sell inventory
+system and call it resource management.
+
+Then they went to the next level, they sold it in the Netherlands.
+And then the Shell company saved 15 million dollars on Accounts Payable.
+
+Inventory and "Accounts Payable" always pushed together.
+
+Because in 1968, when I handled the project "Rampas Apai" or raw materials part and supply, when we were
+doing consulting services at RFM, the combination of the two was an inevitable component.
+
+Although in those days, card and tape.
+Out of that, we added Cost Accounting.
+
+And an important component of that is the Finish goods and the accounts receivables.
+
+Take note, ladies and gentlemen, this is the foundation of ERP.
+Because what is ERP?
+
+Essentially, it's on managing operations on all major resources at the company.
+Number one, receivable.
+Number two, inventory.
+Number three, Accounts Payable.
+Number four, Treasury.
+
+The industry, unfortunately, or computer science, didn't push this.
+Other parts of the world continued with their own topical solution.
+
+One guy would build inventory system.
+Another team would build the receivables.
+Another team would build the general ledger.
+
+It became a fragmented topical adaptation of IT.
+Of course, although being fragmented, they delivered one wish.
+
+Example in the banking industry, just the deposit system, which is a topical single obligation.
+Provided convenience to the public, provided speed of processing for the institution.
+
+But even in banks, it took maybe 20 years for them to do the deposit system and integrate it with receivable or the general ledger.
+
+So we are now in the stage that many companies are still struggling under the issue of having topical solution.
+
+That's why SAP, NetSuite made appealing.
+Because in one product, they did accounting, they did operation.
+
+You see, essentially, the four major enterprise products are duplicated in the subsidiary ledger of the accountant.
+And that's what SAP did, NetSuite did.
+
+In fact, up to now, many QuickBooks users cannot use the subsidiary ledger of the accountant.
+
+Because the accountants are in the habit of trying to finish the books at the end of the month.
+
+In the meantime, the operations, you need the receivable immediately, has to do their own thing.
+So, and most of the world are still in that mode.
+
+Most of the world is trying to migrate to SAP, NetSuite, and so on.
+Believe me, it would not be, ERP need that expensive.
+
+So the solution is that we can do a general ledger that is online, keeping that receivable online to the operations of collection or inventory to store.
+
+We have already integrated that book.
+So, bottom line is, again, the world of computer science...
+
+There are many things that are not understood in the integration process.
+So during my talk to the Computer Society sometime in 2017,
+
+I was also surprised that the body I'm talking to were also shocked.
+And I brought up the topic of systemic and topical solutions.
+
+So that towards the end of my talk,
+the president of the Computer Society Brigadier General Dante Costes said,
+
+"Mr. Bulatao" will solve our problems as if I'm the only guy who can address Philippine information systems problems
+and members of the academic team cannot even made it for me."
+
+We get the computer science guy,
+and he talked to a user,
+defined the requirement,
+those systems,
+
+deliver a seven, six month solution.
+Not knowing what he did,
+it's a topical solution.
+
+Now,
+is this information system, is it essentially,
+a systemic problem.
+Because a transaction coming from sales will impact many applications.
+
+In fact, when data processing started
+in the early late 50s or 60s,
+that's where the focus was.
+
+One day,
+the profit and loss was one year.
+Once a year.
+They just did it once a year after the audit is done.
+
+They don't have anything, say monthly,
+nothing.
+Invoices are just dumped by accountants.
+Journal entries are being posted.
+
+Now, when I started in my career,
+even the few big companies doing
+initial pioneers in computer processing
+are also suffering from
+that particular problem of an annual financial statement.
+
+It's only once a year.
+That's what I remember when
+the board hired Harvard graduates
+to help him think directions for their line.
+In the first month,
+to get a monthly financial statement done,
+every month.
+
+However, it took PAL
+two years to be able to run the first financial statement
+from the time we started.
+And I am tasked not to do the coding,
+but to streamline the procedures
+that will lead to documents being processed.
+
+That's what happened two years ago.
+The most difficult thing is maintenance,
+labor costs,
+materials,
+procurements,
+and the fact that there are so many transactions
+that I have to do every day.
+
+It was difficult for me because there were so many
+enemies on hand.
+The enemies didn't want to do anything.
+They were chasing me overtime.
+first week, postpone them until the end of the month.
+So that they would have overtime.
+That's the problem.
+
+So,
+what I learned is how all the business
+transactions flow. And it provided
+a very broad perspective on how
+a systemic solution would come into play.
+
+When I started to think about
+all the things that I could do with Accounting,
+the requirements of the collection,
+warehouses,
+it provided the integrative
+understanding of how
+an integrated system works.
+
+Unfortunately, that was just me.
+Not even my coworkers
+learned the way I did.
+And when I say, "We can build an AR
+within a week,"
+I mean, we only had three days.
+You can say, "Wait
+for us to gather data."
+Right?
+
+Now,
+this series of experiences
+made me understand
+the meaning of the 80/20 rule.
+
+After
+months of leaving PAL,
+I joined Decision Research.
+
+We had two Americans
+struggling to get their application approved
+for 18 months and not making a roadway
+until I was given
+the task to do raw materials, parts and supply,
+cost accounting,
+labor accounting.
+
+And I managed
+to get approval for management by sending
+the concept of the 80/20 rule to the administration
+according to our demands. And that is what triggered
+the intermediary harboring. 
+
+What does it mean?
+In Receivable, for example, what is the most
+important part? Receivable
+took them 18 months. They cannot even get it
+approved.
+
+When I made a criticism of the kind
+of thinking they have adopted in front of the management
+of RFM and pointed out that
+what is the most important part in Receivable?
+The President's statement of account.
+What else?
+Sales per client.
+The activity
+of the client. 
+
+And when he realized
+that this is his most important part, he gave approval
+immediately. And they were able to use
+the Receivable portion at the end of the month.
+
+
+
+
+
+
