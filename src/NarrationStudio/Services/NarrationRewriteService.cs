@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -114,6 +115,7 @@ public sealed class NarrationRewriteService
             """;
 
         _logger.LogInformation("Submitting transcript ({Length} chars) to Ollama for a {Minutes}-minute talk.", transcript.Length, minutes);
+        var elapsed = Stopwatch.StartNew();
 
         var response = await chat.GetResponseAsync(
             [
@@ -123,13 +125,17 @@ public sealed class NarrationRewriteService
             new ChatOptions { Temperature = 0.35f },
             cancellationToken);
 
+        elapsed.Stop();
         var narration = StripModelExtras(response.Text);
         if (string.IsNullOrWhiteSpace(narration) || narration.Length < 400)
         {
             throw new InvalidOperationException("Ollama returned an empty or too-short narration. Check that the model is pulled and the endpoint is reachable.");
         }
 
-        _logger.LogInformation("Received rewritten narration ({Words} words).", CountWords(narration));
+        _logger.LogInformation(
+            "Received rewritten narration ({Words} words) in {Elapsed:0.0}s.",
+            CountWords(narration),
+            elapsed.Elapsed.TotalSeconds);
         return narration;
     }
 

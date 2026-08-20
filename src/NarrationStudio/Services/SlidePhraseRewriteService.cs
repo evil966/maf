@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
@@ -21,6 +22,8 @@ public sealed class SlidePhraseRewriteService
     public async Task RewriteAllAsync(IEnumerable<NarrationSegment> segments, CancellationToken cancellationToken)
     {
         var chat = _factory.Create();
+        var total = Stopwatch.StartNew();
+        var rewritten = 0;
         foreach (var segment in segments)
         {
             foreach (var slide in segment.Slides)
@@ -39,7 +42,13 @@ public sealed class SlidePhraseRewriteService
                 slide.SourcePhrase = source.Trim();
                 slide.Phrase = await RephraseToOneSentenceAsync(chat, segment.Number, slide.Number, slide.SourcePhrase, cancellationToken);
                 slide.PhraseRewritten = true;
+                rewritten++;
             }
+        }
+
+        if (rewritten > 0)
+        {
+            _logger.LogInformation("Rephrased {Count} slide sentence(s) in {Elapsed:0.0}s.", rewritten, total.Elapsed.TotalSeconds);
         }
     }
 
@@ -51,6 +60,7 @@ public sealed class SlidePhraseRewriteService
         CancellationToken cancellationToken)
     {
         _logger.LogInformation("Rephrasing slide {Segment:00}-{Slide:00} into one sentence ({Chars} chars).", segmentNumber, slideNumber, source.Length);
+        var elapsed = Stopwatch.StartNew();
 
         var response = await chat.GetResponseAsync(
             [
@@ -69,15 +79,26 @@ public sealed class SlidePhraseRewriteService
             new ChatOptions { Temperature = 0.2f },
             cancellationToken);
 
+        elapsed.Stop();
+        var seconds = elapsed.Elapsed.TotalSeconds;
         var sentence = FirstSentence(NarrationRewriteService.StripModelExtras(response.Text));
         if (string.IsNullOrWhiteSpace(sentence))
         {
-            _logger.LogWarning("Ollama returned an empty slide sentence for {Segment:00}-{Slide:00}; using the source excerpt.", segmentNumber, slideNumber);
+            _logger.LogWarning(
+                "Ollama returned an empty slide sentence for {Segment:00}-{Slide:00} after {Elapsed:0.0}s; using the source excerpt.",
+                segmentNumber,
+                slideNumber,
+                seconds);
             return TrimForSlide(source);
         }
 
         sentence = TrimForSlide(sentence);
-        _logger.LogInformation("Slide {Segment:00}-{Slide:00}: {Sentence}", segmentNumber, slideNumber, sentence);
+        _logger.LogInformation(
+            "Rephrased slide {Segment:00}-{Slide:00} in {Elapsed:0.0}s: {Sentence}",
+            segmentNumber,
+            slideNumber,
+            seconds,
+            sentence);
         return sentence;
     }
 
