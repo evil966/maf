@@ -29,8 +29,8 @@ public sealed class DirectPipelineRunner
         }
 
         Console.WriteLine(_tools.SegmentTranscriptIntoEightScripts());
-        Console.WriteLine(_tools.PlanSlidesForAllSegments());
-        Console.WriteLine(_tools.RenderAllSlideImages());
+        Console.WriteLine(await _tools.PlanSlidesForAllSegments());
+        Console.WriteLine(await _tools.RenderAllSlideImages());
         Console.WriteLine(await _tools.SynthesizeAllAudioAsync());
         Console.WriteLine(_tools.ComposeAllSegmentVideos());
         var merged = _tools.MergeAllVideos();

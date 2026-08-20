@@ -23,6 +23,7 @@ builder.Services.AddSingleton<OllamaChatClientFactory>();
 builder.Services.AddSingleton<NarrationRewriteService>();
 builder.Services.AddSingleton<TranscriptSegmenter>();
 builder.Services.AddSingleton<SlidePlannerService>();
+builder.Services.AddSingleton<SlidePhraseRewriteService>();
 builder.Services.AddSingleton<SlideImageRenderer>();
 builder.Services.AddSingleton<TtsService>();
 builder.Services.AddSingleton<VideoComposerService>();

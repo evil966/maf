@@ -159,8 +159,8 @@ public sealed class AgentFactory
             """
             Create slide phrases for each of the 8 narration scripts.
             Call PlanSlidesForAllSegments. Each segment may have at most 5 slides.
-            Each slide phrase must describe that part of the narration.
-            Always re-plan for this run, then hand off to image_renderer.
+            That tool splits the script, then Ollama rewrites each excerpt as one sentence for the slide image.
+            Do not invent slide text yourself. Always re-plan for this run, then hand off to image_renderer.
             """,
             tools:
             [
@@ -178,6 +178,7 @@ public sealed class AgentFactory
             instructions:
             """
             Render one PNG slide for every planned phrase. Always overwrite previous PNGs.
+            Each PNG must show the one-sentence Ollama rewrite stored on the slide, not the raw excerpt.
             Call RenderAllSlideImages, then hand control back to coordinator.
             """,
             tools:

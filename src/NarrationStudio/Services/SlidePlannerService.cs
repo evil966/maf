@@ -25,10 +25,15 @@ public sealed class SlidePlannerService
 
         return phrases
             .Take(maxSlides)
-            .Select((phrase, index) => new SlideSpec
+            .Select((phrase, index) =>
             {
-                Number = index + 1,
-                Phrase = TrimPhrase(phrase)
+                var source = TrimPhrase(phrase);
+                return new SlideSpec
+                {
+                    Number = index + 1,
+                    SourcePhrase = source,
+                    Phrase = source
+                };
             })
             .ToList();
     }

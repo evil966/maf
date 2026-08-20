@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Narration Studio — Internal Technical Architecture and Workings</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #4a5160;
+    --accent: #0f1c2e;
+    --teal: #1b3a4b;
+    --gold: #c9a227;
+    --rule: #d7dde5;
+    --code: #f4f6f8;
+    --note: #eef4f8;
+    --warn: #f8f1e4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: #fff;
+    font-family: "Segoe UI", Calibri, "Liberation Sans", sans-serif;
+    font-size: 10.6pt;
+    line-height: 1.48;
+  }
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left {
+      content: "Narration Studio  ·  Internal Technical Reference";
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+  }
+  @page :first {
+    margin: 0;
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+  }
+  .cover {
+    min-height: 100vh;
+    padding: 32mm 22mm 22mm 22mm;
+    background: #0f1c2e;
+    color: #f4e9d0;
+    page-break-after: always;
+  }
+  .cover .kicker {
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-size: 10pt;
+    color: #c9a227;
+    margin-bottom: 18mm;
+  }
+  .cover h1 {
+    font-size: 28pt;
+    line-height: 1.15;
+    margin: 0 0 8mm 0;
+    border: 0;
+    color: #fff;
+  }
+  .cover .sub {
+    font-size: 13pt;
+    color: #9db4c0;
+    max-width: 140mm;
+  }
+  .cover .meta {
+    margin-top: 36mm;
+    font-size: 10pt;
+    color: #d7dde5;
+  }
+  .cover .meta div { margin: 3mm 0; }
+  .cover .bar {
+    width: 28mm;
+    height: 4px;
+    background: #c9a227;
+    margin: 10mm 0;
+  }
+  .front-matter { page-break-after: always; }
+  h1, h2, h3, h4 {
+    font-family: "Segoe UI Semibold", "Segoe UI", sans-serif;
+    color: var(--accent);
+    page-break-after: avoid;
+  }
+  h1 {
+    font-size: 18pt;
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 3mm;
+    margin: 8mm 0 5mm 0;
+  }
+  h2 {
+    font-size: 14pt;
+    margin: 8mm 0 3mm 0;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3 { font-size: 12pt; margin: 6mm 0 2mm 0; }
+  h4 { font-size: 11pt; margin: 4mm 0 1.5mm 0; color: var(--teal); }
+  p { margin: 0 0 3mm 0; }
+  ul, ol { margin: 0 0 3.5mm 1.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 5mm 0;
+    font-size: 9.5pt;
+    page-break-inside: auto;
+  }
+  th, td {
+    border: 1px solid #cfd6de;
+    padding: 2.2mm 2.6mm;
+    vertical-align: top;
+    text-align: left;
+  }
+  th {
+    background: #0f1c2e;
+    color: #fff;
+    font-weight: 600;
+  }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  code, .path {
+    font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 9pt;
+  }
+  code {
+    background: var(--code);
+    padding: 0 1.4mm;
+    border-radius: 2px;
+  }
+  pre {
+    background: #0f1c2e;
+    color: #e8eef3;
+    padding: 3.5mm 4mm;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.4pt;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-break: break-word;
+    page-break-inside: avoid;
+    margin: 0 0 4.5mm 0;
+  }
+  .callout {
+    border-left: 4px solid var(--gold);
+    background: var(--note);
+    padding: 3mm 4mm;
+    margin: 0 0 4.5mm 0;
+    page-break-inside: avoid;
+  }
+  .callout.warn { background: var(--warn); border-left-color: #b7791f; }
+  .label {
+    font-size: 8pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--teal);
+    font-weight: 700;
+    margin-bottom: 1mm;
+  }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc li { margin-bottom: 1.6mm; }
+  .toc ol { list-style: none; padding-left: 0; }
+  .toc .sec { font-weight: 650; }
+  .fig {
+    border: 1px solid var(--rule);
+    padding: 4mm;
+    margin: 0 0 5mm 0;
+    page-break-inside: avoid;
+    background: #fbfcfd;
+  }
+  .fig .cap {
+    font-size: 9pt;
+    color: var(--muted);
+    margin-top: 3mm;
+  }
+  .boxes { display: flex; flex-direction: column; gap: 2.5mm; }
+  .box {
+    border: 1px solid #9db4c0;
+    background: #fff;
+    padding: 2.4mm 3mm;
+    font-size: 9.4pt;
+  }
+  .box b { color: var(--teal); }
+  .arrow { text-align: center; color: var(--gold); font-weight: 700; letter-spacing: 0.2em; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; }
+  .small { font-size: 9.3pt; color: var(--muted); }
+  .mono { font-family: Consolas, monospace; font-size: 8.6pt; }
+  footer.doc-end { margin-top: 12mm; color: var(--muted); font-size: 9pt; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="kicker">Internal technical reference</div>
+  <h1>Narration Studio<br/>Architecture and Internal Workings</h1>
+  <div class="bar"></div>
+  <p class="sub">End-to-end documentation of the Microsoft Agent Framework boilerplate that turns a voice transcript into a synced narration video. Written from the actual source in <span class="mono">E:\exercises\maf</span>.</p>
+  <div class="meta">
+    <div><b>Solution</b> &nbsp; NarrationStudio.slnx</div>
+    <div><b>Project</b> &nbsp; src/NarrationStudio/NarrationStudio.csproj &nbsp;·&nbsp; net10.0-windows</div>
+    <div><b>Audience</b> &nbsp; Developers onboarding to the codebase</div>
+    <div><b>Classification</b> &nbsp; Internal. Contains architecture and configuration details; API keys are not reproduced here.</div>
+    <div><b>Date</b> &nbsp; 21 August 2026</div>
+    <div><b>Status</b> &nbsp; Confirmed against current source. Where behavior is implied by a library rather than this repo, that is labelled <i>inferred</i>.</div>
+  </div>
+</section>
+
+<section class="front-matter">
+  <h1>Document control</h1>
+  <table>
+    <tr><th>Item</th><th>Value</th></tr>
+    <tr><td>Title</td><td>Narration Studio — Internal Technical Architecture and Workings</td></tr>
+    <tr><td>Scope</td><td>Entire application in this repository. There is a single executable project and no other services.</td></tr>
+    <tr><td>Source of truth</td><td>C# source under <code>src/NarrationStudio</code>, <code>appsettings.json</code>, <code>README.md</code>, and observed runtime behavior.</td></tr>
+    <tr><td>Out of scope</td><td>Microsoft Agent Framework library internals except as used here. ElevenLabs / Ollama / ffmpeg internals except as called.</td></tr>
+    <tr><td>Secrets policy</td><td>This document names configuration keys but does not print secret values.</td></tr>
+  </table>
+
+  <div class="callout">
+    <div class="label">How to read “confirmed” vs “inferred”</div>
+    <p><b>Confirmed</b> means the statement is directly visible in this repository’s source or configuration. <b>Inferred</b> means the behavior comes from a NuGet package, OS API, or external service that this repo calls but does not implement. Those inferences are called out so a new developer does not treat library magic as local code.</p>
+  </div>
+
+  <h2>Table of contents</h2>
+  <div class="toc">
+    <ol>
+      <li class="sec">1. Application Overview</li>
+      <li class="sec">2. System Architecture</li>
+      <li class="sec">3. Detailed Component Breakdown</li>
+      <li class="sec">4. Request/Response and Execution Flows</li>
+      <li class="sec">5. Database and Data Layer</li>
+      <li class="sec">6. API Documentation</li>
+      <li class="sec">7. Frontend / Internal UI Workings</li>
+      <li class="sec">8. Backend / Internal Service Workings</li>
+      <li class="sec">9. Security</li>
+      <li class="sec">10. Error Handling and Edge Cases</li>
+      <li class="sec">11. Configuration and Environment</li>
+      <li class="sec">12. Deployment and Infrastructure</li>
+      <li class="sec">13. Performance and Scalability</li>
+      <li class="sec">14. Testing</li>
+      <li class="sec">15. Developer Guide</li>
+      <li class="sec">16. Complete Dependency Map</li>
+      <li class="sec">17. Technical Diagrams</li>
+      <li class="sec">18. Appendix</li>
+    </ol>
+  </div>
+</section>
+
+<h1 id="s1">1. Application Overview</h1>
+
+<h2>1.1 Purpose and core functionality</h2>
+<p>Narration Studio is a <b>Windows console application</b> that produces a timestamped narration video from a source transcript. It is a Microsoft Agent Framework (MAF) boilerplate: specialist agents can drive the same production tools that a deterministic runner also calls directly.</p>
+<p>The product contract, as implemented, is:</p>
+<ol>
+  <li>Read <code>voice_transcript.txt</code> (raw notes / transcript).</li>
+  <li>Rewrite it into a spoken ~7-minute talk, saved as <code>output/scripts/narration-rewritten.txt</code>. Today this rewrite is usually <b>stubbed</b> from <code>voice_transcript_ollama.txt</code> when <code>Studio:UseStubNarration</code> is true; otherwise it calls local Ollama.</li>
+  <li>Split that rewritten talk into exactly <b>8</b> narration scripts.</li>
+  <li>Plan at most <b>5</b> on-screen phrases per script and render them as PNG slides.</li>
+  <li>Synthesize <code>audio-01.mp3</code> … <code>audio-08.mp3</code> via ElevenLabs (if an API key is configured) or Windows SAPI + ffmpeg.</li>
+  <li>Sync each MP3 with that segment’s slides into <code>video-01.mp4</code> … <code>video-08.mp4</code>.</li>
+  <li>Merge into <code>video_yyyyMMdd_HHmmss.mp4</code> in the output folder.</li>
+</ol>
+<p>The application is <b>not</b> a web service, desktop GUI, or multi-user system. There is no ASP.NET host, no HTTP listener, no SPA, and no SQL database. A developer expecting MVC / REST layers will not find them; the analogue of “controllers” is <code>ProductionApp</code> plus tool methods on <code>ProductionTools</code>.</p>
+
+<h2>1.2 Main use cases</h2>
+<table>
+  <tr><th>Use case</th><th>How it is invoked</th><th>What happens</th></tr>
+  <tr><td>Produce a video from the repo transcript (current default)</td><td><code>dotnet run --project src\NarrationStudio -- --orchestration direct</code> from the repo root</td><td>Clears previous output, copies stub narration, segments, slides, TTS, compose, merge.</td></tr>
+  <tr><td>Agent-orchestrated production</td><td>Omit <code>--orchestration</code> (defaults to <code>handoff</code>) or pass <code>sequential</code></td><td>Builds MAF agents against Ollama/OpenAI/Azure; specialists call the same tools. If the merged file is missing afterward, DirectPipelineRunner finishes the job.</td></tr>
+  <tr><td>Use a different transcript file</td><td>Pass a path as the first non-flag argument, or set <code>Studio:TranscriptPath</code></td><td><code>ProductionApp.ResolveTranscriptPath</code> walks a candidate list until a file exists.</td></tr>
+  <tr><td>Call Ollama for the rewrite instead of the stub</td><td>Set <code>Studio:UseStubNarration</code> to <code>false</code></td><td><code>NarrationRewriteService.RephraseAsync</code> posts the raw transcript to Ollama.</td></tr>
+  <tr><td>Prevent overlapping runs</td><td>Automatic</td><td>Named mutex <code>NarrationStudio.Production</code>. A second instance throws.</td></tr>
+</table>
+
+<h2>1.3 High-level architecture</h2>
+<p>Composition is Generic Host (<code>Host.CreateApplicationBuilder</code> in <code>Program.cs</code>). Every collaboration object is a singleton. Control flows top-down: host → <code>ProductionApp.RunAsync</code> → either <code>WorkflowHost</code> (agents) or <code>DirectPipelineRunner</code> → <code>ProductionTools</code> → domain services → disk and external processes/APIs.</p>
+<div class="fig">
+  <div class="boxes">
+    <div class="box"><b>Host / DI</b> — Program.cs loads JSON config and registers singletons</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Application</b> — ProductionApp: mutex, path resolution, mode selection, console banner</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Orchestration</b> — handoff / sequential workflows (MAF) or DirectPipelineRunner</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Agents (optional)</b> — coordinator + six specialists wrapping tools, guardrails, context, file memory</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Tools</b> — ProductionTools: the only public production API (methods, not HTTP)</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Services</b> — rewrite, segment, plan, render, TTS, ffmpeg compose/merge, PipelineStore</div>
+    <div class="arrow">▼</div>
+    <div class="box"><b>Externals</b> — filesystem, Ollama HTTP, ElevenLabs HTTP, ffmpeg/ffprobe, Windows SAPI</div>
+  </div>
+  <div class="cap">Figure 1. Logical layers. Confirmed: all boxes correspond to types or processes named in this repo.</div>
+</div>
+
+<h2>1.4 Overall data and control flow</h2>
+<p>Data is a single in-memory <code>PipelineState</code> cloned on read via JSON round-trip, persisted after every mutation to <code>output/pipeline-state.json</code>. Artifacts are files. There is no message bus.</p>
+<p>Control flow for a typical current run (<code>UseStubNarration=true</code>, <code>--orchestration direct</code>):</p>
+<ol>
+  <li><code>Program.cs</code> builds the host and calls <code>ProductionApp.RunAsync(args)</code>.</li>
+  <li>Mutex acquired. Transcript and output directory resolved. <code>PipelineStore.Initialize</code> deletes previous generated files.</li>
+  <li>Because stubbing is on, <code>RephraseTranscriptIntoNarration</code> copies the stub file into <code>narration-rewritten.txt</code> and sets <code>NarrationPath</code>.</li>
+  <li>Direct mode always re-segments, re-plans, re-renders, re-synthesizes, re-composes, and merges.</li>
+  <li>Console prints <code>Done: {merged path}</code>.</li>
+</ol>
+<p>Status strings written onto state: <code>created</code> → <code>narration-ready</code> → <code>scripts-ready</code> → <code>slides-planned</code> → <code>slides-rendered</code> → <code>audio-ready</code> → <code>videos-ready</code> → <code>complete</code>.</p>
+
+<h1 id="s2">2. System Architecture</h1>
+
+<h2>2.1 Frontend, backend, database, APIs, services, external dependencies</h2>
+<p>Map the requested web-app vocabulary onto what actually exists:</p>
+<table>
+  <tr><th>Typical web layer</th><th>Narration Studio equivalent</th><th>Confirmed location</th></tr>
+  <tr><td>Frontend</td><td>Console stdout/stderr. No UI framework, routing, or components.</td><td><code>ProductionApp</code>, <code>WorkflowHost.RunAsync</code>, <code>DirectPipelineRunner</code></td></tr>
+  <tr><td>Backend</td><td>The same process. Business logic is C# services invoked in-process.</td><td><code>src/NarrationStudio/Services</code>, <code>Tools</code>, <code>Orchestration</code></td></tr>
+  <tr><td>Database</td><td>None. Persistence is JSON + files under <code>output/</code>.</td><td><code>PipelineStore</code>, <code>Models/PipelineModels.cs</code></td></tr>
+  <tr><td>HTTP API (this app)</td><td>None served. The process is a client of Ollama and ElevenLabs.</td><td><code>NarrationRewriteService</code>, <code>TtsService</code></td></tr>
+  <tr><td>Internal API</td><td><code>ProductionTools</code> methods exposed to agents via <code>AIFunctionFactory.Create</code></td><td><code>Tools/ProductionTools.cs</code></td></tr>
+  <tr><td>External processes</td><td><code>ffmpeg</code>, <code>ffprobe</code> on PATH</td><td><code>FfmpegProcess</code> in <code>TtsService.cs</code></td></tr>
+</table>
+
+<h2>2.2 Responsibilities of each layer</h2>
+<table>
+  <tr><th>Layer</th><th>Responsibility</th><th>Must not</th></tr>
+  <tr><td>Program.cs</td><td>Configuration providers, DI, start <code>ProductionApp</code></td><td>Contain pipeline logic</td></tr>
+  <tr><td>ProductionApp</td><td>Single-run policy, path/mode resolution, stub rewrite before agents, failover to direct</td><td>Segment text or call ffmpeg</td></tr>
+  <tr><td>WorkflowHost / AgentFactory</td><td>Build MAF agents and workflows; stream agent text to the console</td><td>Write media files themselves</td></tr>
+  <tr><td>DirectPipelineRunner</td><td>Deterministic ordered tool calls; overwrite-oriented regeneration</td><td>Talk to LLMs</td></tr>
+  <tr><td>ProductionTools</td><td>Validate preconditions, call services, mutate PipelineStore, return short status strings</td><td>Know ffmpeg flags</td></tr>
+  <tr><td>Domain services</td><td>Pure-ish transforms and I/O (rewrite, split, PNG, TTS, video)</td><td>Choose orchestration mode</td></tr>
+  <tr><td>PipelineStore</td><td>Thread-safe state, filenames, wipe-on-start, persist JSON, agent status summary</td><td>Call external APIs</td></tr>
+  <tr><td>Guardrails / context / file memory</td><td>Filter agent text, inject status into prompts, optional on-disk agent notes</td><td>Drive the media pipeline</td></tr>
+</table>
+
+<h2>2.3 How the layers communicate</h2>
+<p>All communication is <b>in-process method calls</b> through constructor-injected singletons. Agents do not get a private copy of services; they receive <code>AIFunction</code> wrappers around the same <code>ProductionTools</code> instance. That is why a tool called by an agent updates the same <code>PipelineStore</code> that DirectPipelineRunner later reads.</p>
+<p>External communication:</p>
+<ul>
+  <li><b>Ollama</b> — HTTP via <code>OllamaApiClient</code> (OllamaSharp) at <code>Model:Endpoint</code>, default <code>http://localhost:11434</code>.</li>
+  <li><b>ElevenLabs</b> — HTTP POST <code>https://api.elevenlabs.io/v1/text-to-speech/{voiceId}</code> with header <code>xi-api-key</code>.</li>
+  <li><b>ffmpeg / ffprobe</b> — child processes, stdout/stderr captured asynchronously to avoid deadlock, 8-minute timeout.</li>
+  <li><b>Windows SAPI</b> — <code>System.Speech.Synthesis.SpeechSynthesizer</code> writing WAV, then ffmpeg to MP3.</li>
+</ul>
+
+<h2>2.4 Why this shape</h2>
+<ul>
+  <li><b>Tools as the real pipeline.</b> Agents are optional drivers. Direct mode exists so production still works when the LLM is slow, missing, or poorly follows handoff instructions. Confirmed in <code>ProductionApp</code>: agent failure to produce a merged file always falls through to <code>DirectPipelineRunner</code>.</li>
+  <li><b>Wipe outputs on start.</b> Earlier versions skipped existing PNGs/MP3s/MP4s, so a new narration could be muxed with old media. <code>Initialize</code> now deletes generated trees.</li>
+  <li><b>Stub rewrite.</b> Local Ollama rewrite is long-running (timeout 30 minutes). Stubbing lets the rest of the factory be developed against a known talk.</li>
+  <li><b>Windows TFM.</b> <code>net10.0-windows</code> is required for <code>System.Speech</code>.</li>
+</ul>
+
+<h1 id="s3">3. Detailed Component Breakdown</h1>
+<p>This section covers every significant type in the project. Small helpers are included because they affect production reliability.</p>
+
+<h2>3.1 Program.cs — composition root</h2>
+<p><b>Purpose.</b> Create Generic Host, bind options, register singletons, run the app. There is no <code>Main</code> class; top-level statements are used.</p>
+<p><b>Config loading (confirmed, and easy to get wrong).</b> <code>Host.CreateApplicationBuilder</code> uses the process current directory as content root. Launch profile <code>workingDirectory</code> is the repo root (<code>$(ProjectDir)..\..</code>), so the first <code>appsettings.json</code> lookup is <code>{cwd}/appsettings.json</code>, which does <b>not</b> exist. The second explicit call loads <code>AppContext.BaseDirectory/appsettings.json</code> — the copy MSBuild places next to the DLL. That is the file that actually configures a <code>dotnet run</code> from the repo root.</p>
+<p><b>Inputs / outputs.</b> Input: <code>args</code>, JSON files, environment variables (Host default providers). Output: constructed <code>IServiceProvider</code>, then <code>ProductionApp.RunAsync</code>.</p>
+<p><b>Error handling.</b> None locally; failures bubble from <code>RunAsync</code> and crash the process (non-zero exit). Confirmed: no try/catch in <code>Program.cs</code>.</p>
+
+<h2>3.2 ProductionApp</h2>
+<p><b>File:</b> <code>src/NarrationStudio/ProductionApp.cs</code></p>
+<p><b>Responsibilities.</b> Exclusive run (mutex), resolve transcript/output/orchestration, initialize store (which wipes artifacts), print a banner (including TTS provider), optionally apply stub rewrite <b>before</b> agents exist, choose direct vs agent workflow, failover to direct if merge is missing, print Done.</p>
+<p><b>Important methods.</b></p>
+<table>
+  <tr><th>Method</th><th>Behavior</th></tr>
+  <tr><td><code>RunAsync(string[] args)</code></td><td>Full run lifecycle described in §4.</td></tr>
+  <tr><td><code>ResolveTranscriptPath</code></td><td>Candidates: first non-<code>--</code> arg, then <code>Studio:TranscriptPath</code>, then several relative <code>voice_transcript.txt</code> locations. First existing file wins. Else <code>FileNotFoundException</code>.</td></tr>
+  <tr><td><code>ResolveOutputDirectory</code></td><td><code>Studio:OutputDirectory</code> or <code>output</code>, rooted against current directory.</td></tr>
+  <tr><td><code>ResolveOrchestration</code></td><td><code>--orchestration=x</code> or <code>--orchestration x</code>. Default <code>handoff</code>.</td></tr>
+</table>
+<p><b>Design decision — stub before TryCreate.</b> Creating agents calls <code>OllamaChatClientFactory.Create</code> and logs Ollama immediately. If stub rewrite waited until a rewriter tool ran, users saw Ollama connecting and assumed the stub was ignored. Stub copy now happens first.</p>
+<p><b>Auth.</b> None. Process identity is the logged-in Windows user.</p>
+
+<h2>3.3 PipelineStore and PipelineState</h2>
+<p><b>Files:</b> <code>Services/PipelineStore.cs</code>, <code>Models/PipelineModels.cs</code></p>
+<p><b>Purpose.</b> Single source of pipeline truth for one process run. Analogous to a unit-of-work + repository, but for files.</p>
+<p><b>Internal structure.</b> Private <code>PipelineState _state</code> plus <code>object _gate</code>. <code>Snapshot()</code> serializes then deserializes with source-generated <code>PipelineJsonContext</code> so callers cannot mutate live state without <code>Mutate</code>. Every <code>Mutate</code> writes <code>output/pipeline-state.json</code>.</p>
+<p><b>Initialize.</b> Sets transcript and output paths, creates directories, <b>deletes</b> previous scripts/slides/audio/video, <code>agent-file-memory</code>, leftover <code>video_*.mp4</code>, and old state JSON, then persists a fresh state. Returns the count of deleted files for the banner.</p>
+<p><b>Naming helpers (confirmed).</b></p>
+<pre>audio-{nn}.mp3
+video-{nn}.mp4
+segment-{nn}-slide-{nn}.png
+narration-rewritten.txt
+video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
+<p><b>State fields.</b> See §5. <code>RunId</code> is assigned in the constructor <b>before</b> Initialize; wiping old merged videos uses glob <code>video_*.mp4</code>, not the new RunId.</p>
+<p><b>SummarizeForAgent.</b> Counts scripts/slides/images/audio/videos from in-memory segments plus File.Exists. “Next required step” is a priority chain. After wipe, in-memory segments are empty even if a human dropped files on disk mid-run — agents are steered by this summary, not by scanning leftover files (except existence checks on paths already recorded in state).</p>
+<p><b>Concurrency.</b> Lock around snapshot/mutate/initialize. Tool methods sometimes snapshot, work, then mutate — a second thread could interleave, but the app is effectively single-threaded aside from ffmpeg async reads.</p>
+<p><b>Why JSON clone for Snapshot.</b> Cheap isolation without implementing <code>ICloneable</code> on a graph of lists. Cost is negligible at this scale.</p>
+
+<h2>3.4 ProductionTools</h2>
+<p><b>File:</b> <code>Tools/ProductionTools.cs</code></p>
+<p><b>Purpose.</b> The internal production API. Each public method has a <code>[Description]</code> consumed by MAF when wrapping as an <code>AIFunction</code>. Direct mode calls the same methods.</p>
+<p><b>Methods, inputs, outputs.</b></p>
+<table>
+  <tr><th>Method</th><th>Input</th><th>Writes</th><th>State status</th><th>Throws if</th></tr>
+  <tr><td><code>GetPipelineStatus</code></td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td><code>LoadTranscript</code></td><td>—</td><td>—</td><td>—</td><td>file missing</td></tr>
+  <tr><td><code>LoadNarrationSource</code></td><td>—</td><td>—</td><td>—</td><td>no NarrationPath file</td></tr>
+  <tr><td><code>RephraseTranscriptIntoNarration</code></td><td>raw transcript via LoadTranscript; rewrite service may ignore it when stubbing</td><td><code>scripts/narration-rewritten.txt</code></td><td>narration-ready</td><td>stub missing/short; Ollama empty</td></tr>
+  <tr><td><code>SegmentTranscriptIntoEightScripts</code></td><td>rewritten text</td><td><code>narration-01..08.txt</code>, <code>narration-all.txt</code></td><td>scripts-ready</td><td>count ≠ SegmentCount</td></tr>
+  <tr><td><code>SaveNarrationScripts</code></td><td>JSON array of segments</td><td>same script files</td><td>scripts-ready</td><td>parse fail; wrong count</td></tr>
+  <tr><td><code>PlanSlidesForAllSegments</code></td><td>each segment.Script</td><td>in-state SlideSpec lists</td><td>slides-planned</td><td>scripts missing</td></tr>
+  <tr><td><code>RenderAllSlideImages</code></td><td>slide phrases</td><td>PNGs; always overwrite</td><td>slides-rendered</td><td>scripts missing</td></tr>
+  <tr><td><code>SynthesizeAllAudioAsync</code></td><td>each script</td><td>MP3s; duration probed</td><td>audio-ready</td><td>scripts missing; TTS/ffmpeg fail</td></tr>
+  <tr><td><code>ComposeAllSegmentVideos</code></td><td>audio + images</td><td>segment MP4s</td><td>videos-ready</td><td>audio/slides missing</td></tr>
+  <tr><td><code>MergeAllVideos</code></td><td>8 video paths</td><td>merged MP4</td><td>complete</td><td>count ≠ SegmentCount</td></tr>
+</table>
+<p><b>EnsureScripts.</b> Requires <code>Segments.Count == SegmentCount</code> in memory — not a directory listing. After a wipe, agents that skip segmentation cannot render.</p>
+<p><b>Cancellation.</b> <code>Rephrase</code> and TTS pass <code>CancellationToken.None</code> today. Host stop (<code>ApplicationStopping</code>) is only wired into <code>WorkflowHost.RunAsync</code>, not into ffmpeg/TTS. Confirmed limitation.</p>
+
+<h2>3.5 NarrationRewriteService and OllamaChatClientFactory</h2>
+<p><b>File:</b> <code>Services/NarrationRewriteService.cs</code> (both types)</p>
+<p><b>OllamaChatClientFactory.</b> Lazy singleton <code>IChatClient</code> (<code>OllamaApiClient</code>) with a .NET <code>Lock</code>. HttpClient BaseAddress = endpoint, Timeout = max(1, TimeoutMinutes) minutes. Used both for rewrite and, when no Azure/OpenAI key, for agent orchestration.</p>
+<p><b>RephraseAsync.</b></p>
+<ul>
+  <li>If <code>UseStubNarration</code>: resolve stub path (transcript dir, cwd, BaseDirectory, and a walk-up from bin). Strip <code>&lt;think&gt;</code> and fences. Reject if length &lt; 400 characters. Does not send the raw transcript to a model.</li>
+  <li>Else: system prompt asks for ~<code>TargetTalkMinutes * 140</code> words, spoken voice, no invented facts. User message is the raw transcript. Temperature 0.35. Same length check on the result.</li>
+</ul>
+<p><b>Why 400 characters.</b> Heuristic to catch empty or “thinking only” model output. Not a linguistic quality gate.</p>
+
+<h2>3.6 TranscriptSegmenter</h2>
+<p>Splits on <code>(?&lt;=[\.!\?])\s+</code>, then packs sentences into <code>SegmentCount</code> buckets by character budget. If too few groups, it peels sentences from the richest bucket. Titles are “Segment NN — {first sentence truncated to 72 chars}”.</p>
+<p><b>WriteScriptFiles</b> overwrites <code>narration-{nn}.txt</code> and concatenates <code>narration-all.txt</code>.</p>
+<p><b>Edge case (confirmed).</b> If every remaining group has a single sentence and count is still below 8, the loop can <code>break</code> after duplicating one sentence into a new group, then <code>Take(buckets)</code> may still return fewer than 8. <code>SegmentTranscriptIntoEightScripts</code> would then throw. Unlikely for a 7-minute talk; possible for a tiny stub.</p>
+
+<h2>3.7 SlidePlannerService</h2>
+<p>Clamps max slides to 1..5. Sentence-splits the script; if more sentences than max, concatenates chunks. Phrases truncated to 220 characters with ellipsis. Returns <code>List&lt;SlideSpec&gt;</code> with numbers and phrases; <code>ImagePath</code> filled later by render.</p>
+<p>This is deterministic NLP-by-regex, not an LLM. The <code>slide_planner</code> agent is instructed to call this tool rather than invent phrases, though a misbehaving model could still skip the tool (handoff risk). Direct mode always calls the tool.</p>
+
+<h2>3.8 SlideImageRenderer</h2>
+<p>ImageSharp PNG, 1920×1080 by default. Dark navy canvas, gold rule, header “SEGMENT nn · SLIDE x/y”, wrapped body text, footer = segment title. Fonts tried: Segoe UI, Arial, Calibri, else first system family.</p>
+<p><b>WriteAllBytesWithRetry.</b> FileMode.Create with share ReadWrite|Delete, 6 attempts, then write a GUID sidecar and copy over. Exists because Windows file locks from ImageSharp, explorers, or leftover ffmpeg were observed during development.</p>
+
+<h2>3.9 TtsService and FfmpegProcess</h2>
+<p><b>Key resolution.</b> <code>Studio:ElevenLabsApiKey</code> first, else env <code>ELEVENLABS_API_KEY</code>. If present: POST MPEG to ElevenLabs; on non-success throw with status and body (no fallback to SAPI). If absent: SAPI WAV, or NAudio sine “tone bed” if SAPI throws, then ffmpeg libmp3lame.</p>
+<p><b>DescribeProvider</b> is used in the startup banner so operators can see ElevenLabs vs SAPI without reading logs.</p>
+<p><b>FfmpegProcess.</b> Starts ffmpeg/ffprobe with redirected stdout and stderr <b>both read asynchronously</b>, WaitForExit 8 minutes, kill process tree on timeout. This avoids the classic deadlock of reading one stream to end before the other. Probe returns stdout; run returns stderr (unused except on failure).</p>
+<p><b>Duration.</b> ffprobe format duration; parse fail defaults to 5 seconds (would distort slide timing if probe fails).</p>
+
+<h2>3.10 VideoComposerService</h2>
+<p><b>ComposeSegment.</b> Writes ffmpeg concat demuxer list: each slide <code>file</code> + <code>duration</code> = max(0.4, audioDuration / slideCount), last file repeated (ffmpeg concat still-image requirement). Mixes concat video with the MP3, scale/pad to configured size, fps, libx264 stillimage, aac, <code>-shortest</code>, faststart. <code>-y</code> overwrites.</p>
+<p><b>Merge.</b> Concat list of the eight MP4s. Tries stream copy first; on any exception re-encodes libx264+aac. That fallback is why mismatched timebases from vfr concat can still produce a playable master.</p>
+<p>Path escaping for concat files: backslash → slash, single quote → ffmpeg concat escape.</p>
+
+<h2>3.11 DirectPipelineRunner</h2>
+<p>Logs, prints status, rephrases only if <code>NarrationPath</code> is empty/missing (so ProductionApp’s stub is not duplicated unless something deleted the file), then <b>always</b> segments, plans, renders, synthesizes, composes, merges. No skip-if-exists on media. Return value is the merge tool’s string; ProductionApp also reads <code>MergedVideoPath</code> from state.</p>
+
+<h2>3.12 AgentFactory and ProductionCrew</h2>
+<p><b>ProductionCrew</b> is a record of seven <code>AIAgent</code> instances.</p>
+<p><b>TryCreate.</b> Builds one <code>IChatClient</code>: Azure OpenAI if endpoint set (key or DefaultAzureCredential), else OpenAI if <code>OPENAI_API_KEY</code>, else Ollama. Failure returns false → ProductionApp uses direct mode.</p>
+<p>Each agent: <code>chatClient.AsAIAgent(ChatClientAgentOptions)</code> with id/name/description, instructions, tools, and two context providers. Then <code>.AsBuilder().Use(guardrails.RunAsync).Use(guardrails.FunctionAsync).Build()</code>.</p>
+<p>File memory: MAF <code>FileMemoryProvider</code> + <code>FileSystemAgentFileStore</code> under <code>output/agent-file-memory</code>, working folder <code>production-notes</code>. <b>Inferred:</b> the package persists agent notes as files; this repo does not reimplement that store. Initialize deletes that directory each run, so memory does not survive reruns.</p>
+<p><b>Chat client priority</b> is Azure → OpenAI → Ollama. A developer with Azure env vars set will <b>not</b> use local Ollama for specialists even if Ollama is running. Confirmed in <code>CreateChatClient</code>.</p>
+
+<h2>3.13 WorkflowHost</h2>
+<p><b>Handoff.</b> <code>AgentWorkflowBuilder.CreateHandoffBuilderWith(coordinator)</code>. If stubbing, rewriter is omitted from the graph. Specialists hand back to coordinator. Coordinator has autonomous mode, turnLimit 8, continuation prompt to GetPipelineStatus. <b>Inferred:</b> MAF runtime interprets handoff conditions as natural-language routing hints to the model, not compiled predicates.</p>
+<p><b>Sequential.</b> <code>BuildSequential</code> with rewriter omitted when stubbing.</p>
+<p><b>RunAsync.</b> <code>InProcessExecution.RunStreamingAsync</code>, sends <code>TurnToken(emitEvents: true)</code>, prints <code>AgentResponseUpdateEvent</code> text grouped by executor id, returns on <code>WorkflowOutputEvent</code>.</p>
+<p><b>BuildUserPrompt.</b> Injects stub vs Ollama rewrite step plus live <code>SummarizeForAgent</code>.</p>
+
+<h2>3.14 ProductionGuardrails</h2>
+<p>Inbound user messages containing blocked terms (<code>harmful</code>, <code>illegal</code>, <code>violence</code>, <code>exploit</code>, <code>malware</code>, <code>bypass paywall</code>) are replaced with a blocked marker; the run short-circuits with a refusal. All messages get email and <code>###-###-####</code> phone redaction.</p>
+<p><b>FunctionAsync</b> logs tool start/finish. It counts the word “slide” in string results of tools whose names contain “Slide” and logs a warning if count exceeds max slides × segments. <b>Confirmed: it does not trim or reject the result.</b> The 8-script cap is enforced in tools by throwing, not here.</p>
+<p>Guardrails apply only to agent runs, not DirectPipelineRunner.</p>
+
+<h2>3.15 ProductionContextProvider</h2>
+<p>On invoke, injects instructions: current summary, exact file naming, segment/slide caps, stay on task. After invoke, appends truncated assistant text to <code>PipelineState.Notes</code> (max 24, drop oldest). Notes are persisted in pipeline-state.json.</p>
+
+<h2>3.16 Configuration types</h2>
+<p><code>StudioOptions</code> section <code>Studio</code>; <code>OllamaOptions</code> section <code>Model</code>. Defaults in the class match appsettings for segment counts, stubbing, voice id, video size. Options are captured at construction (<code>IOptions&lt;T&gt;.Value</code>), so <code>reloadOnChange</code> on JSON files does <b>not</b> update live option objects already injected. Confirmed: services store <code>_options = options.Value</code>.</p>
+
+<h2>3.17 Launch profile</h2>
+<p><code>Properties/launchSettings.json</code> profile <code>NarrationStudio</code>: empty args, working directory repo root. That is why transcripts at repo root are found and output is <code>E:\exercises\maf\output</code> rather than under <code>bin</code>.</p>
+
+<h1 id="s4">4. Request/Response and Execution Flows</h1>
+<p>There are no inbound HTTP requests. “Request” here means a developer invoking the executable.</p>
+
+<h2>4.1 Direct orchestration (confirmed current happy path)</h2>
+<pre>User: dotnet run --project src\NarrationStudio -- --orchestration direct
+  → Host.CreateApplicationBuilder
+  → Bind Studio + Model options
+  → ProductionApp.RunAsync
+      → Mutex NarrationStudio.Production
+      → Resolve voice_transcript.txt (repo root)
+      → Resolve output/ (cwd-relative)
+      → orchestration = "direct"
+      → PipelineStore.Initialize  (delete previous artifacts)
+      → Banner: Transcript, Output, Mode, Previous cleared N, Rewrite stub, TTS ElevenLabs|SAPI
+      → UseStubNarration → ProductionTools.RephraseTranscriptIntoNarration
+            → LoadTranscript (raw file, unused by stub rewrite)
+            → NarrationRewriteService.RephraseAsync → read stub, strip think tags
+            → write narration-rewritten.txt, status=narration-ready
+      → DirectPipelineRunner.RunAsync
+            → skip rephrase (NarrationPath exists)
+            → SegmentTranscriptIntoEightScripts
+            → PlanSlidesForAllSegments
+            → RenderAllSlideImages
+            → SynthesizeAllAudioAsync  (8 sequential ElevenLabs or SAPI calls)
+            → ComposeAllSegmentVideos  (8 ffmpeg)
+            → MergeAllVideos           (ffmpeg concat)
+      → Console: Done: output\video_{RunId}.mp4</pre>
+
+<h2>4.2 Handoff orchestration</h2>
+<ol>
+  <li>Same init and optional stub rewrite.</li>
+  <li><code>AgentFactory.TryCreate</code> — if this throws/returns false, jump to direct.</li>
+  <li><code>CreateHandoffWorkflow</code> then <code>RunAsync</code> with user prompt and <code>ApplicationStopping</code>.</li>
+  <li>Coordinator should call <code>GetPipelineStatus</code> and hand off. Specialists call tools that mutate store and disk.</li>
+  <li>Autonomous continuation up to 8 coordinator turns <i>(inferred MAF semantics)</i>.</li>
+  <li>If <code>MergedVideoPath</code> missing or file absent → warning log → DirectPipelineRunner. Direct will not skip media generation, so a partial agent run is overwritten into a complete video (scripts already in memory if agents segmented; if not, direct segments from rewritten file).</li>
+</ol>
+<p><b>Subtlety.</b> Direct after a partial agent run still requires in-memory <code>Segments</code> or it will call <code>SegmentTranscriptIntoEightScripts</code> from the rewritten file. Agent-authored scripts in memory are kept for that process; they are not reloaded from disk on a new process because Initialize wipes and does not hydrate from leftover JSON (JSON was also deleted).</p>
+
+<h2>4.3 Sequential orchestration</h2>
+<p>Same as handoff but <code>BuildSequential</code> runs specialists in a fixed list. Stubbing removes the rewriter from that list because ProductionApp already wrote the talk.</p>
+
+<h2>4.4 ElevenLabs request/response (external)</h2>
+<table>
+  <tr><th>Item</th><th>Value (confirmed in TtsService)</th></tr>
+  <tr><td>Method / URL</td><td>POST https://api.elevenlabs.io/v1/text-to-speech/{ElevenLabsVoiceId}</td></tr>
+  <tr><td>Headers</td><td><code>xi-api-key</code>, <code>Accept: audio/mpeg</code></td></tr>
+  <tr><td>JSON body</td><td><code>{ "text": "&lt;segment script&gt;", "model_id": "&lt;ElevenLabsModelId&gt;" }</code></td></tr>
+  <tr><td>Success</td><td>Body copied to audio-NN.mp3</td></tr>
+  <tr><td>Failure</td><td>Exception including HTTP status and response body; pipeline stops; no SAPI fallback</td></tr>
+</table>
+
+<h2>4.5 Ollama rewrite request (when stubbing off)</h2>
+<p>Via Microsoft.Extensions.AI <code>GetResponseAsync</code> on <code>OllamaApiClient</code>. <b>Inferred wire format:</b> OllamaSharp talks to Ollama’s HTTP API (typically <code>/api/chat</code>). This repo does not construct that JSON manually. Timeout is the HttpClient timeout (default 30 minutes).</p>
+
+<h2>4.6 Frontend-to-backend-to-database</h2>
+<p>Does not apply. Console is the UI; services are in-process; “database” is <code>pipeline-state.json</code> written on Mutate.</p>
+
+<h1 id="s5">5. Database and Data Layer</h1>
+<p>There is <b>no database server, ORM, or migration framework</b>. Documented here is the file data layer that plays the same role.</p>
+
+<h2>5.1 Architecture</h2>
+<p>One JSON document plus a directory tree. Schema is the C# types in <code>PipelineModels.cs</code>, serialized with <code>System.Text.Json</code> source generation, camelCase, indented.</p>
+
+<h2>5.2 “Tables” (files and collections)</h2>
+<table>
+  <tr><th>Store</th><th>Purpose</th><th>Lifetime</th></tr>
+  <tr><td><code>output/pipeline-state.json</code></td><td>Run metadata, segments, notes, paths</td><td>Rewritten every Mutate; deleted at next Initialize</td></tr>
+  <tr><td><code>output/scripts/*</code></td><td>Rewritten talk and 8 scripts</td><td>Deleted at next run start</td></tr>
+  <tr><td><code>output/slides/*.png</code></td><td>Slide images</td><td>Deleted at next run start</td></tr>
+  <tr><td><code>output/audio/*.mp3</code></td><td>TTS</td><td>Deleted at next run start</td></tr>
+  <tr><td><code>output/video/*.mp4</code> and concat txt</td><td>Segment videos + ffmpeg lists</td><td>Deleted at next run start</td></tr>
+  <tr><td><code>output/video_*.mp4</code></td><td>Merged masters</td><td>All matching files deleted at next run start</td></tr>
+  <tr><td><code>output/agent-file-memory/</code></td><td>MAF file memory</td><td>Cleared at next run start</td></tr>
+</table>
+
+<h2>5.3 Relationships</h2>
+<p>PipelineState 1—* NarrationSegment 1—* SlideSpec. Paths on segments/slides are denormalized strings, not foreign keys. Integrity is “file exists at path” checks in tools and SummarizeForAgent.</p>
+
+<h2>5.4 Schema (important fields)</h2>
+<table>
+  <tr><th>Type</th><th>Fields</th></tr>
+  <tr><td>PipelineState</td><td>runId, transcriptPath, narrationPath, outputDirectory, startedAt, status, segments[], mergedVideoPath, notes[]</td></tr>
+  <tr><td>NarrationSegment</td><td>number, title, script, slides[], audioPath, videoPath, audioDurationSeconds</td></tr>
+  <tr><td>SlideSpec</td><td>number, phrase, imagePath</td></tr>
+</table>
+
+<h2>5.5 Queries and access</h2>
+<p>No query language. Access is LINQ over in-memory lists inside locked Mutate/Snapshot. There is no index. Hydration from a previous JSON file is <b>not implemented</b>; Initialize always starts empty segments after wipe.</p>
+
+<h2>5.6 Validation and integrity</h2>
+<ul>
+  <li>Segment count must equal <code>Studio:SegmentCount</code> (default 8) at segment and merge boundaries.</li>
+  <li>Slide lists trimmed to MaxSlidesPerSegment at render time.</li>
+  <li>Stub/Ollama narration must be ≥ 400 characters.</li>
+  <li>JSON save of agent scripts uses <code>PipelineJsonContext.ListNarrationSegment</code>.</li>
+  <li>No checksums, no transactional disk writes (JSON write is not atomic replace; a crash mid-write can corrupt pipeline-state.json). Next run deletes it anyway.</li>
+</ul>
+
+<h2>5.7 Caching</h2>
+<p>Ollama client instance is cached for process lifetime. No artifact cache: reruns recompute everything. ImageSharp fonts are loaded per render call (minor cost).</p>
+
+<h1 id="s6">6. API Documentation</h1>
+<p>This application <b>does not expose HTTP endpoints</b>. The internal API is <code>ProductionTools</code>. Agents see the <code>[Description]</code> strings. Below is the contract a developer or agent relies on.</p>
+
+<h2>6.1 Authentication</h2>
+<p>None on tools. ElevenLabs and optional OpenAI/Azure keys authenticate <b>outbound</b> calls only.</p>
+
+<h2>6.2 Tool catalog</h2>
+<table>
+  <tr><th>Tool</th><th>Sync</th><th>Arguments</th><th>Return (string)</th><th>Errors</th></tr>
+  <tr><td>GetPipelineStatus</td><td>sync</td><td>none</td><td>multi-line status</td><td>none</td></tr>
+  <tr><td>LoadTranscript</td><td>sync</td><td>none</td><td>raw file text</td><td>FileNotFoundException</td></tr>
+  <tr><td>LoadNarrationSource</td><td>sync</td><td>none</td><td>rewritten talk</td><td>InvalidOperationException</td></tr>
+  <tr><td>RephraseTranscriptIntoNarration</td><td>async</td><td>none</td><td>“Saved N-word narration to {path}.”</td><td>FileNotFound / InvalidOperation / HTTP timeout</td></tr>
+  <tr><td>SegmentTranscriptIntoEightScripts</td><td>sync</td><td>none</td><td>“Saved N narration scripts to {dir}.”</td><td>count mismatch; empty transcript</td></tr>
+  <tr><td>SaveNarrationScripts</td><td>sync</td><td>segmentsJson</td><td>“Saved N agent-authored…”</td><td>JSON / count</td></tr>
+  <tr><td>PlanSlidesForAllSegments</td><td>sync</td><td>none</td><td>planned count + max</td><td>EnsureScripts</td></tr>
+  <tr><td>RenderAllSlideImages</td><td>sync</td><td>none</td><td>slides directory</td><td>EnsureScripts; IOException on PNG lock</td></tr>
+  <tr><td>SynthesizeAllAudioAsync</td><td>async</td><td>none</td><td>audio directory</td><td>EnsureScripts; ElevenLabs HTTP; ffmpeg</td></tr>
+  <tr><td>ComposeAllSegmentVideos</td><td>sync</td><td>none</td><td>video directory</td><td>missing audio/slides; ffmpeg</td></tr>
+  <tr><td>MergeAllVideos</td><td>sync</td><td>none</td><td>“Merged video: {path}”</td><td>need 8 videos; ffmpeg</td></tr>
+</table>
+<p><code>SaveNarrationScripts</code> payload: JSON array of objects with <code>number</code>, <code>title</code>, <code>script</code> (camelCase via source-gen). Extra slide/audio fields may deserialize but are unused until later tools fill them.</p>
+
+<h2>6.3 CLI “API”</h2>
+<pre>NarrationStudio.exe [transcriptPath] [--orchestration handoff|sequential|direct]
+NarrationStudio.exe --orchestration=direct</pre>
+<p>Unknown flags are ignored except they are not treated as transcript paths if they start with <code>--</code>. Confirmed: no <code>--help</code>.</p>
+
+<h2>6.4 Error responses</h2>
+<p>Tools throw .NET exceptions. MAF <i>inferred</i> surfaces those as tool errors to the model. Direct mode: <code>ProductionApp</code> logs <code>Production pipeline failed</code> and rethrows → process crash. No ProblemDetails JSON.</p>
+
+<h1 id="s7">7. Frontend / Internal UI Workings</h1>
+<p>There is no component hierarchy, router, form library, or rendering lifecycle in the SPA sense.</p>
+<h3>7.1 Console as UI</h3>
+<ul>
+  <li><b>Banner</b> in ProductionApp: transcript, output, mode, cleared file count, stub line, TTS provider.</li>
+  <li><b>Tool progress</b> in DirectPipelineRunner: each tool return string WriteLine.</li>
+  <li><b>Agent stream</b> in WorkflowHost: executor id headers and incremental <code>update.Update.Text</code>.</li>
+  <li><b>Host logging</b> Microsoft.Extensions.Logging to console (default Host logging).</li>
+</ul>
+<h3>7.2 State management</h3>
+<p>UI is stateless. PipelineStore is the application state. Operators infer progress from logs and from files appearing under <code>output/</code>.</p>
+<h3>7.3 Event handling</h3>
+<p>Ctrl+C triggers Host <code>ApplicationStopping</code>, which WorkflowHost passes into MAF streaming. Direct ffmpeg/TTS does not observe that token (limitation). Mutex is released when the process exits (using Dispose on Mutex).</p>
+<h3>7.4 Validation</h3>
+<p>No forms. Invalid CLI transcript path → FileNotFoundException before work starts.</p>
+
+<h1 id="s8">8. Backend / Internal Service Workings</h1>
+
+<h2>8.1 Business logic placement</h2>
+<table>
+  <tr><th>Rule</th><th>Where enforced</th></tr>
+  <tr><td>Exactly 8 scripts</td><td>TranscriptSegmenter + ProductionTools count check + SaveNarrationScripts</td></tr>
+  <tr><td>Max 5 slides</td><td>SlidePlannerService clamp; RenderAllSlideImages Take(); options</td></tr>
+  <tr><td>Never segment raw transcript after rewrite exists</td><td>LoadNarrationSource / SegmentTranscriptIntoEightScripts</td></tr>
+  <tr><td>Overwrite on rerun</td><td>PipelineStore.Initialize delete + tools always write</td></tr>
+  <tr><td>Single instance</td><td>named Mutex</td></tr>
+  <tr><td>Spoken talk length ~7 min</td><td>prompt only (Ollama); stub file is used as-is</td></tr>
+</table>
+
+<h2>8.2 Controllers / handlers</h2>
+<p><code>ProductionApp.RunAsync</code> is the only top-level handler. Tool methods are the command handlers.</p>
+
+<h2>8.3 Middleware</h2>
+<p>Agent middleware only: <code>ProductionGuardrails.RunAsync</code> (message filter) and <code>FunctionAsync</code> (tool log). Not ASP.NET middleware. Host logging is standard.</p>
+
+<h2>8.4 Background jobs / queues / events</h2>
+<p>None. No Hangfire, no Channel&lt;T&gt; pipeline, no bus. ffmpeg is synchronous from the caller’s perspective (blocked WaitForExit). MAF streaming is async enumeration on the main run task.</p>
+
+<h2>8.5 External integrations</h2>
+<table>
+  <tr><th>System</th><th>Used for</th><th>Failure mode</th></tr>
+  <tr><td>Ollama</td><td>Rewrite (if not stub) and default agent LLM</td><td>Timeout 30 min; TryCreate may still succeed while later calls hang/fail</td></tr>
+  <tr><td>OpenAI / Azure OpenAI</td><td>Optional agent LLM if keys/endpoint present</td><td>Takes priority over Ollama</td></tr>
+  <tr><td>ElevenLabs</td><td>TTS</td><td>Hard fail, no fallback</td></tr>
+  <tr><td>ffmpeg/ffprobe</td><td>MP3 encode, duration, slideshow, merge</td><td>Must be on PATH; 8 min timeout</td></tr>
+  <tr><td>Windows SAPI</td><td>TTS fallback if no ElevenLabs key</td><td>Falls back further to NAudio tone bed</td></tr>
+</table>
+
+<h1 id="s9">9. Security</h1>
+
+<h2>9.1 Authentication and authorization</h2>
+<p>No user login, roles, or tokens for using Narration Studio. Anyone who can run the EXE as the current user can produce videos and read <code>output/</code>.</p>
+<p>Outbound: ElevenLabs API key; optional OpenAI key; optional Azure key or DefaultAzureCredential (managed identity / VS / az cli — <i>inferred</i> Azure.Identity behavior).</p>
+
+<h2>9.2 Data protection</h2>
+<p>Transcripts and generated media sit unencrypted on disk under <code>output/</code> (gitignored). Notes in pipeline-state.json may contain agent excerpts. PII redaction in guardrails is regex-only on agent messages, not on transcript files or TTS payloads. Emails in the source talk are sent to ElevenLabs in full. Confirmed: redaction does not wrap ProductionTools in direct mode.</p>
+
+<h2>9.3 Input validation</h2>
+<p>Filesystem paths are combined from config and args without a sandbox. A transcript argument of an unexpected file will be read if it exists. ffmpeg concat lists include absolute paths. There is no command-injection via ArgumentList (good: <code>ProcessStartInfo.ArgumentList</code> is used, not a single shell string).</p>
+
+<h2>9.4 Session / tokens</h2>
+<p>No app sessions. Named mutex is a lock, not auth. HttpClients do not implement retry/auth refresh.</p>
+
+<h2>9.5 Attack vectors and mitigations</h2>
+<table>
+  <tr><th>Vector</th><th>Situation</th><th>Mitigation / gap</th></tr>
+  <tr><td>Prompt injection via transcript</td><td>Agent modes send status + files to an LLM</td><td>Guardrail blocked terms are trivial; tools still execute if the model calls them. Direct mode ignores transcript as instructions.</td></tr>
+  <tr><td>Secret leakage</td><td>API key in git-tracked appsettings.json</td><td><b>Gap.</b> User requested appsettings storage. Do not commit to a public remote. UserSecretsId exists but is unused for ElevenLabs.</td></tr>
+  <tr><td>SSRF</td><td>Model:Endpoint is operator-controlled</td><td>Acceptable for a local tool; do not bind endpoint to untrusted input.</td></tr>
+  <tr><td>Path traversal</td><td>OutputDirectory from config</td><td>No jail. Operator-trusted config.</td></tr>
+  <tr><td>Resource exhaustion</td><td>Huge transcript → huge TTS bills / long ffmpeg</td><td>No size cap besides Ollama/stub length check of 400 min, not max.</td></tr>
+  <tr><td>Overlapping ffmpeg locks</td><td>two runs</td><td>Mutex</td></tr>
+</table>
+
+<h2>9.6 Secrets and configuration management</h2>
+<p>Confirmed sources: JSON, environment (Host defaults + explicit ElevenLabs env fallback), user-secrets package referenced but not loaded with a dedicated call (Generic Host <b>does</b> add user secrets in Development <i>inferred</i> when DOTNET_ENVIRONMENT=Development). Current launch profile does not set environment. ElevenLabs key in Studio section is the live source.</p>
+<p><b>This document does not reprint secret values.</b> Rotate any key that was committed or pasted into chat.</p>
+
+<h1 id="s10">10. Error Handling and Edge Cases</h1>
+
+<h2>10.1 Propagation</h2>
+<p>Exceptions from services → tools → DirectPipelineRunner or MAF tool invocation → ProductionApp catch logs Error and rethrows. No global exception handler / EventId taxonomy beyond default logger categories.</p>
+
+<h2>10.2 Logging</h2>
+<p>ILogger on ProductionApp, DirectPipelineRunner, AgentFactory, WorkflowHost, NarrationRewriteService, TtsService, ProductionGuardrails. Information for provider selection and ElevenLabs writes; Warning for stub rewrite, SAPI failure, agent create failure, incomplete agent merge, guardrail block; Error for pipeline failure.</p>
+<p>No structured file log, no Application Insights, no correlation ID beyond RunId in state/filenames.</p>
+
+<h2>10.3 Retries</h2>
+<table>
+  <tr><th>Operation</th><th>Retry</th></tr>
+  <tr><td>Delete generated files</td><td>Up to 8 attempts, backoff 150ms × attempt</td></tr>
+  <tr><td>PNG write</td><td>6 attempts + sidecar copy</td></tr>
+  <tr><td>ffmpeg merge</td><td>One fallback re-encode, not a counted retry</td></tr>
+  <tr><td>ElevenLabs / Ollama HTTP</td><td>None</td></tr>
+</table>
+
+<h2>10.4 Failure scenarios</h2>
+<ul>
+  <li><b>Second instance:</b> InvalidOperationException mutex.</li>
+  <li><b>Missing transcript / stub:</b> FileNotFoundException.</li>
+  <li><b>Stub too short:</b> InvalidOperationException.</li>
+  <li><b>Player has video_*.mp4 open:</b> Initialize throws IOException after retries.</li>
+  <li><b>ffmpeg missing:</b> Win32Exception / “failed to start ffmpeg”.</li>
+  <li><b>ElevenLabs 401/quota:</b> InvalidOperationException with body; run aborts mid-audio (earlier MP3s already written this run; next run wipes them).</li>
+  <li><b>Ollama down in handoff:</b> TryCreate may still construct a client; failure appears when the first model call happens. Direct mode with stubbing never needs Ollama.</li>
+  <li><b>Agent never merges:</b> failover DirectPipelineRunner.</li>
+</ul>
+
+<h2>10.5 Validation failures</h2>
+<p>Wrong agent JSON for SaveNarrationScripts, empty transcript, missing audio before compose. All throw; no partial merge if fewer than SegmentCount videos.</p>
+
+<h1 id="s11">11. Configuration and Environment</h1>
+
+<h2>11.1 Files</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>src/NarrationStudio/appsettings.json</code></td><td>Primary Studio + Model settings; copied to output dir</td></tr>
+  <tr><td><code>bin/Debug/net10.0-windows/appsettings.json</code></td><td>What <code>dotnet run</code> actually binds when cwd is repo root</td></tr>
+  <tr><td><code>appsettings.Development.json</code></td><td>gitignored; optional if you add it</td></tr>
+  <tr><td><code>Properties/launchSettings.json</code></td><td>workingDirectory = repo root</td></tr>
+</table>
+
+<h2>11.2 Studio section (confirmed keys)</h2>
+<table>
+  <tr><th>Key</th><th>Default in code</th><th>Meaning</th></tr>
+  <tr><td>SegmentCount</td><td>8</td><td>Scripts / MP3s / MP4s required</td></tr>
+  <tr><td>MaxSlidesPerSegment</td><td>5</td><td>Planner clamp and render trim</td></tr>
+  <tr><td>TargetTalkMinutes</td><td>7</td><td>Ollama word-budget; context instructions</td></tr>
+  <tr><td>UseStubNarration</td><td>true</td><td>Skip Ollama rewrite</td></tr>
+  <tr><td>StubNarrationPath</td><td>voice_transcript_ollama.txt</td><td>Relative stub file</td></tr>
+  <tr><td>TranscriptPath</td><td>empty</td><td>Optional explicit transcript</td></tr>
+  <tr><td>OutputDirectory</td><td>output</td><td>Relative to cwd unless rooted</td></tr>
+  <tr><td>OpenAIModel</td><td>gpt-4o-mini</td><td>If OPENAI_API_KEY set</td></tr>
+  <tr><td>AzureOpenAIEndpoint / Deployment</td><td>empty / gpt-4o-mini</td><td>Agent client if endpoint set</td></tr>
+  <tr><td>ElevenLabsApiKey</td><td>empty in class; set in JSON</td><td>TTS</td></tr>
+  <tr><td>ElevenLabsVoiceId</td><td>UPXQvvSDDubCtocmbltQ</td><td>TTS voice</td></tr>
+  <tr><td>ElevenLabsModelId</td><td>eleven_multilingual_v2</td><td>TTS model</td></tr>
+  <tr><td>VideoWidth / Height / FrameRate</td><td>1920 / 1080 / 30</td><td>PNG and ffmpeg vf</td></tr>
+</table>
+
+<h2>11.3 Model section</h2>
+<p>Endpoint default http://localhost:11434; Model qwen3.8:latest; TimeoutMinutes 30.</p>
+
+<h2>11.4 Environment variables</h2>
+<table>
+  <tr><th>Variable</th><th>Effect</th></tr>
+  <tr><td>ELEVENLABS_API_KEY</td><td>Used only if JSON key is empty</td></tr>
+  <tr><td>OPENAI_API_KEY / OPENAI_MODEL</td><td>Agent chat client</td></tr>
+  <tr><td>AZURE_OPENAI_ENDPOINT / API_KEY / DEPLOYMENT_NAME / DEPLOYMENT</td><td>Azure agent client; endpoint wins over OpenAI and Ollama</td></tr>
+  <tr><td>DOTNET_ENVIRONMENT</td><td>Standard Host; not set by launch profile</td></tr>
+</table>
+
+<h2>11.5 Feature flags</h2>
+<p>The only first-class flag is <code>UseStubNarration</code>. Orchestration mode is a CLI flag, not JSON. No staging/production splits exist in-repo.</p>
+
+<h1 id="s12">12. Deployment and Infrastructure</h1>
+<p><b>Confirmed:</b> this is a local developer executable, not a deployed service.</p>
+<ul>
+  <li><b>Build:</b> <code>dotnet build</code> / Visual Studio 2026 on <code>NarrationStudio.slnx</code>. SDK-style csproj, TargetFramework net10.0-windows.</li>
+  <li><b>Run:</b> <code>dotnet run --project src\NarrationStudio</code> with cwd repo root (launchSettings) or F5 in VS.</li>
+  <li><b>Hosting:</b> operator’s Windows 10/11 machine. Requires ffmpeg/ffprobe on PATH, optional Ollama, optional network to ElevenLabs.</li>
+  <li><b>Containers / k8s / CI/CD / monitoring:</b> none in the repository. No Dockerfile, no GitHub Actions, no health checks.</li>
+  <li><b>Publish:</b> <code>dotnet publish</code> would produce a framework-dependent or self-contained exe; not scripted here. System.Speech and Windows TFM mean Linux containers are not a supported target without replacing SAPI.</li>
+</ul>
+<p>Observability is console logs only. Operators watch <code>output/</code> for artifacts.</p>
+
+<h1 id="s13">13. Performance and Scalability</h1>
+<table>
+  <tr><th>Stage</th><th>Cost</th><th>Notes</th></tr>
+  <tr><td>Stub rewrite</td><td>Negligible</td><td>File copy + strip</td></tr>
+  <tr><td>Ollama rewrite</td><td>Minutes; up to 30 min timeout</td><td>Single request; temperature 0.35</td></tr>
+  <tr><td>Segment / plan</td><td>Milliseconds</td><td>Regex</td></tr>
+  <tr><td>PNG render</td><td>Seconds for ~40 images</td><td>Sequential CPU; ImageSharp</td></tr>
+  <tr><td>ElevenLabs TTS</td><td>Dominant when enabled</td><td>8 sequential HTTP calls, 3 min timeout each worst case</td></tr>
+  <tr><td>ffmpeg compose</td><td>High CPU</td><td>8 sequential encodes 1920×1080</td></tr>
+  <tr><td>ffmpeg merge copy</td><td>Fast</td><td>Re-encode fallback is slow</td></tr>
+</table>
+<p><b>Concurrency.</b> No parallel TTS or ffmpeg. Could be added but would contend on API rate limits and disk. Mutex forbids two pipelines.</p>
+<p><b>Scalability.</b> Designed for one talk, one machine, one run. Not multi-tenant. Bottleneck for “correct sounding” video is ElevenLabs quota/latency; bottleneck for local-only is SAPI + ffmpeg.</p>
+<p><b>Caching.</b> Intentionally disabled for media so reruns match current narration.</p>
+
+<h1 id="s14">14. Testing</h1>
+<p><b>Confirmed: the repository contains no test project, no xUnit/NUnit/MSTest references, and no sample fixtures beyond the two transcript text files.</b></p>
+<p>What a new developer should still treat as the implicit test matrix (manual):</p>
+<ul>
+  <li>direct + stub + ElevenLabs → eight MP3s + merged mp4</li>
+  <li>direct + stub + no API key → SAPI path</li>
+  <li>UseStubNarration false with Ollama up → narration-rewritten.txt from model</li>
+  <li>handoff failover when merge missing</li>
+  <li>second instance mutex</li>
+  <li>rerun deletes previous video_*.mp4 and regenerates from stub</li>
+  <li>locked output file → clear failure message</li>
+</ul>
+<p>Highest-value future unit tests: TranscriptSegmenter distribution count, SlidePlanner max-5, StripModelExtras, PipelineStore wipe, TtsService key resolution (without calling network).</p>
+
+<h1 id="s15">15. Developer Guide</h1>
+
+<h2>15.1 How to understand the codebase</h2>
+<p>Read in this order: <code>Program.cs</code> → <code>ProductionApp.cs</code> → <code>DirectPipelineRunner.cs</code> → <code>ProductionTools.cs</code> → the service for the stage you care about → only then <code>AgentFactory</code> / <code>WorkflowHost</code>. Agents are a control plane over tools; tools are the product.</p>
+
+<h2>15.2 Where functionality lives</h2>
+<table>
+  <tr><th>If you want to change…</th><th>Start here</th></tr>
+  <tr><td>CLI, mutex, mode default</td><td>ProductionApp</td></tr>
+  <tr><td>File names / wipe policy</td><td>PipelineStore</td></tr>
+  <tr><td>Stub vs Ollama rewrite</td><td>NarrationRewriteService, StudioOptions</td></tr>
+  <tr><td>How text is chopped into 8</td><td>TranscriptSegmenter</td></tr>
+  <tr><td>On-screen phrases</td><td>SlidePlannerService</td></tr>
+  <tr><td>Slide look</td><td>SlideImageRenderer</td></tr>
+  <tr><td>Voice / TTS vendor</td><td>TtsService, appsettings</td></tr>
+  <tr><td>Video timing / codecs</td><td>VideoComposerService</td></tr>
+  <tr><td>Agent personalities / tool grants</td><td>AgentFactory</td></tr>
+  <tr><td>Handoff graph</td><td>WorkflowHost</td></tr>
+  <tr><td>Blocked words</td><td>ProductionGuardrails</td></tr>
+</table>
+
+<h2>15.3 Extending</h2>
+<ul>
+  <li><b>Ninth segment:</b> raise SegmentCount; verify ffmpeg merge and agent instructions (several prompts hardcode “8”).</li>
+  <li><b>New specialist:</b> add tool method, wrap in AgentFactory, add handoff edges, update sequential list and coordinator text.</li>
+  <li><b>Cloud LLM rewrite:</b> swap OllamaChatClientFactory usage in NarrationRewriteService; keep stub flag.</li>
+  <li><b>Stable output name:</b> today merged name includes RunId; consumers must read the Done line or pipeline-state.json.</li>
+</ul>
+
+<h2>15.4 Common workflows</h2>
+<pre>cd E:\exercises\maf
+dotnet build
+dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
+<p>Edit transcripts at repo root. Inspect <code>output/scripts/narration-rewritten.txt</code> to verify stub/Ollama. Play the newest <code>output/video_*.mp4</code>.</p>
+
+<h2>15.5 Pitfalls and technical debt</h2>
+<ul>
+  <li>appsettings loaded from bin copy; editing source JSON requires rebuild/copy.</li>
+  <li>Secrets in tracked JSON.</li>
+  <li>Agent prompts still mention “8” and audio-01..08 even if SegmentCount changes.</li>
+  <li>Guardrail slide counter does not enforce.</li>
+  <li>CancellationToken.None on TTS/rewrite.</li>
+  <li>SummarizeForAgent next-step order prefers audio before remaining slide plans if scripts exist — odd if someone called TTS without planning (direct mode does not do that).</li>
+  <li>No tests.</li>
+  <li>Tone-bed fallback can produce a video that “works” with a beep instead of speech if SAPI fails and no ElevenLabs key.</li>
+  <li>FileMemoryProvider types come from MAF; upgrading Microsoft.Agents.AI can break AgentFactory.</li>
+</ul>
+
+<h1 id="s16">16. Complete Dependency Map</h1>
+
+<h2>16.1 Internal</h2>
+<pre>Program
+  └─ ProductionApp
+        ├─ StudioOptions, TtsService (banner)
+        ├─ PipelineStore
+        ├─ ProductionTools ──┬─ NarrationRewriteService ─ OllamaChatClientFactory
+        │                    ├─ TranscriptSegmenter
+        │                    ├─ SlidePlannerService
+        │                    ├─ SlideImageRenderer
+        │                    ├─ TtsService ─ FfmpegProcess, NAudio, System.Speech, HttpClient
+        │                    └─ VideoComposerService ─ FfmpegProcess
+        ├─ AgentFactory ────── ProductionTools, PipelineStore, ProductionContextProvider,
+        │                      OllamaChatClientFactory, ProductionGuardrails (new per TryCreate),
+        │                      FileMemoryProvider (package)
+        ├─ WorkflowHost ────── PipelineStore, ProductionCrew
+        └─ DirectPipelineRunner ─ ProductionTools, PipelineStore</pre>
+
+<h2>16.2 NuGet packages (csproj) and why</h2>
+<table>
+  <tr><th>Package</th><th>Why</th><th>Where</th></tr>
+  <tr><td>Microsoft.Extensions.Hosting 10.0.0</td><td>Generic host, DI, logging, config</td><td>Program.cs</td></tr>
+  <tr><td>Microsoft.Extensions.Configuration.*</td><td>JSON, env, user secrets</td><td>Program.cs, csproj</td></tr>
+  <tr><td>Microsoft.Agents.AI 1.17.0</td><td>AIAgent, AsAIAgent, context, file memory types</td><td>AgentFactory, Guardrails, Memory</td></tr>
+  <tr><td>Microsoft.Agents.AI.Workflows 1.17.0</td><td>Handoff/sequential workflows, InProcessExecution</td><td>WorkflowHost</td></tr>
+  <tr><td>Microsoft.Agents.AI.OpenAI 1.17.0</td><td>OpenAI/Azure IChatClient adapters</td><td>AgentFactory</td></tr>
+  <tr><td>Microsoft.Extensions.AI 10.7.0</td><td>IChatClient, ChatMessage, AIFunctionFactory</td><td>Agents, rewrite, tools wrap</td></tr>
+  <tr><td>Microsoft.Extensions.AI.OpenAI 10.6.0</td><td>AsIChatClient extensions</td><td>AgentFactory</td></tr>
+  <tr><td>Azure.AI.OpenAI 2.1.0 / Azure.Identity 1.14.2</td><td>Azure client + DefaultAzureCredential</td><td>AgentFactory</td></tr>
+  <tr><td>OpenAI (transitive via packages)</td><td>OpenAIClient</td><td>AgentFactory</td></tr>
+  <tr><td>OllamaSharp 5.4.25</td><td>OllamaApiClient</td><td>OllamaChatClientFactory</td></tr>
+  <tr><td>SixLabors.ImageSharp 3.1.11 + Drawing + Fonts</td><td>PNG slides</td><td>SlideImageRenderer</td></tr>
+  <tr><td>NAudio 2.2.1</td><td>Tone-bed fallback WAV</td><td>TtsService.GenerateToneBed</td></tr>
+  <tr><td>System.Speech 9.0.8</td><td>Windows TTS</td><td>TtsService</td></tr>
+</table>
+<p>NoWarn includes MAAI001, OPENAI001, MEAI001 — experimental / preview analyzer IDs for MAF/OpenAI/MEAI.</p>
+
+<h2>16.3 External runtime dependencies</h2>
+<p>ffmpeg, ffprobe, Windows, optional Ollama daemon, optional ElevenLabs network, optional Azure/OpenAI network.</p>
+
+<h1 id="s17">17. Technical Diagrams</h1>
+
+<h2>17.1 Overall architecture</h2>
+<div class="fig">
+<pre style="margin:0">┌─────────────────────────────────────────────────────────────┐
+│ Windows process  NarrationStudio.exe  (net10.0-windows)     │
+│  Generic Host DI singletons                                  │
+│    ProductionApp → Orchestration → Tools → Services          │
+└────────────┬───────────────────────────────┬────────────────┘
+             │ HTTP                          │ processes
+             ▼                               ▼
+     Ollama :11434                    ffmpeg / ffprobe
+     ElevenLabs API                   Windows SAPI
+     OpenAI / Azure (optional)
+             │
+             ▼
+        output/  (JSON + PNG + MP3 + MP4)</pre>
+  <div class="cap">Figure 2. Process and externals. Confirmed.</div>
+</div>
+
+<h2>17.2 Component relationships</h2>
+<p>See §16.1. All arrows are constructor injection except ffmpeg (Process.Start) and HTTP clients created inside services.</p>
+
+<h2>17.3 Data flow</h2>
+<div class="fig">
+<pre style="margin:0">voice_transcript.txt
+        │
+        ▼
+ [stub] voice_transcript_ollama.txt  ──►  narration-rewritten.txt
+ [else] Ollama(qwen3.8)
+        │
+        ▼
+ narration-01.txt … 08.txt
+        │
+        ├──────────────►  slide phrases  ►  segment-NN-slide-MM.png
+        │
+        ▼
+ audio-01.mp3 … 08.mp3   (ElevenLabs or SAPI)
+        │
+        ▼
+ video-01.mp4 … 08.mp4   (png sequence timed to MP3)
+        │
+        ▼
+ video_yyyyMMdd_HHmmss.mp4
+ + pipeline-state.json</pre>
+  <div class="cap">Figure 3. Artifact lineage. Later stages must not read the raw transcript once narration-rewritten.txt exists.</div>
+</div>
+
+<h2>17.4 Direct-mode lifecycle</h2>
+<p>See §4.1. Sequence is strictly linear; each tool Mutate persists JSON before the next tool starts (except render which mutates once after all PNGs).</p>
+
+<h2>17.5 Handoff lifecycle</h2>
+<div class="fig">
+<pre style="margin:0">User prompt
+   → coordinator (GetPipelineStatus)
+        ├─[stub off]→ narration_rewriter → Rephrase… → script_segmenter
+        └─[stub on]→ script_segmenter → LoadNarrationSource + Segment…
+             → coordinator
+             → slide_planner → PlanSlides… → image_renderer
+             → coordinator
+             → tts_producer → SynthesizeAllAudioAsync
+             → coordinator
+             → video_composer → Compose… + Merge…
+             → coordinator stop when merged exists
+   → if no merged file: DirectPipelineRunner (full remaining tools)</pre>
+  <div class="cap">Figure 4. Handoff control. Routing is model-directed; tools perform I/O.</div>
+</div>
+
+<h2>17.6 Data “ER” diagram</h2>
+<div class="fig">
+<pre style="margin:0">PipelineState
+   runId PK (string, time-based)
+   1 ──&lt; NarrationSegment.number  (1..SegmentCount)
+              1 ──&lt; SlideSpec.number (1..≤5)
+   notes[]  (capped 24)</pre>
+  <div class="cap">Figure 5. In-memory / JSON relationship. No RDBMS.</div>
+</div>
+
+<h2>17.7 Authentication flow</h2>
+<div class="fig">
+<pre style="margin:0">Operator runs EXE as Windows user
+   → no login
+   → TtsService.ResolveApiKey: JSON then env
+        → if set: xi-api-key on ElevenLabs POST
+   → AgentFactory.CreateChatClient:
+        Azure endpoint? → ApiKeyCredential or DefaultAzureCredential
+        else OPENAI_API_KEY? → OpenAIClient
+        else Ollama (no auth in this repo)</pre>
+  <div class="cap">Figure 6. Outbound credential flow only.</div>
+</div>
+
+<h2>17.8 Deployment architecture</h2>
+<p>Single box: developer workstation. No load balancer, no container, no CDN. Distribution, if any, is copying the published folder plus ensuring ffmpeg and appsettings are present.</p>
+
+<h1 id="s18">18. Appendix</h1>
+
+<h2>18.1 Glossary</h2>
+<table>
+  <tr><th>Term</th><th>Meaning in this codebase</th></tr>
+  <tr><td>MAF</td><td>Microsoft Agent Framework (NuGet Microsoft.Agents.AI*)</td></tr>
+  <tr><td>Direct mode</td><td>No agents; DirectPipelineRunner calls tools in order</td></tr>
+  <tr><td>Handoff</td><td>Coordinator routes to specialist agents</td></tr>
+  <tr><td>Stub narration</td><td>Pre-written talk in voice_transcript_ollama.txt used instead of Ollama rewrite</td></tr>
+  <tr><td>RunId</td><td>Local timestamp used in merged filename</td></tr>
+  <tr><td>ProductionTools</td><td>The in-process API agents and direct mode share</td></tr>
+  <tr><td>Guardrails</td><td>Agent middleware for blocked terms and PII regex; not a full policy engine</td></tr>
+  <tr><td>SAPI</td><td>Windows Speech API used when no ElevenLabs key</td></tr>
+</table>
+
+<h2>18.2 Important files and directories</h2>
+<pre>E:\exercises\maf\
+  NarrationStudio.slnx
+  README.md
+  voice_transcript.txt              raw source notes
+  voice_transcript_ollama.txt       stub 7-minute talk
+  output\                           gitignored generated tree
+  src\NarrationStudio\
+    Program.cs
+    ProductionApp.cs
+    appsettings.json
+    NarrationStudio.csproj
+    Agents\AgentFactory.cs
+    Agents\WorkflowHost.cs
+    Orchestration\DirectPipelineRunner.cs
+    Tools\ProductionTools.cs
+    Services\*.cs
+    Models\PipelineModels.cs
+    Configuration\*.cs
+    Guardrails\ProductionGuardrails.cs
+    Memory\ProductionContextProvider.cs
+    Properties\launchSettings.json
+  docs\                             this document (HTML + PDF)</pre>
+
+<h2>18.3 Configuration reference</h2>
+<p>See §11. Do not copy secrets into documentation, tickets, or screenshots.</p>
+
+<h2>18.4 Key assumptions</h2>
+<ul>
+  <li>Operator is on Windows with .NET 10 SDK and ffmpeg on PATH.</li>
+  <li>One talk at a time; output directory is expendable.</li>
+  <li>Transcript language works with the chosen TTS model/voice.</li>
+  <li>Default run uses stub narration and (if configured) ElevenLabs.</li>
+  <li>Repo root is the working directory so relative output/ and transcripts resolve.</li>
+</ul>
+
+<h2>18.5 Known limitations</h2>
+<ul>
+  <li>No GUI, API server, DB, tests, CI, or multi-run resume.</li>
+  <li>Agent quality depends on the LLM; direct mode is the reliable factory.</li>
+  <li>Hardcoded “eight” in several prompts.</li>
+  <li>Secrets currently live in appsettings.json.</li>
+  <li>No max transcript size; ElevenLabs character limits can fail a segment.</li>
+  <li>Slide timing is even split of audio duration, not word-level alignment.</li>
+  <li>Guardrails do not apply to direct mode and do not enforce slide counts.</li>
+</ul>
+
+<h2>18.6 Areas requiring further investigation</h2>
+<ul>
+  <li>Exact MAF handoff / autonomous turn semantics on package 1.17.0 (only usage sites are in WorkflowHost).</li>
+  <li>FileMemoryProvider on-disk layout (deleted every run; low priority).</li>
+  <li>Whether Host user-secrets load without Development environment.</li>
+  <li>ElevenLabs voice settings (stability/similarity) — currently only text + model_id.</li>
+  <li>ffprobe duration locale parsing (uses current-culture TryParse, not InvariantCulture) — possible issue on some locales.</li>
+</ul>
+
+<footer class="doc-end">
+  End of document. Generated from the Narration Studio source tree as of 21 August 2026. If the code and this PDF diverge, the code wins.
+</footer>
+
+</body>
+</html>

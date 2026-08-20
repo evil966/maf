@@ -10,6 +10,7 @@ public sealed class ProductionTools
     private readonly PipelineStore _store;
     private readonly TranscriptSegmenter _segmenter;
     private readonly SlidePlannerService _slidePlanner;
+    private readonly SlidePhraseRewriteService _slidePhrases;
     private readonly SlideImageRenderer _renderer;
     private readonly TtsService _tts;
     private readonly VideoComposerService _video;
@@ -19,6 +20,7 @@ public sealed class ProductionTools
         PipelineStore store,
         TranscriptSegmenter segmenter,
         SlidePlannerService slidePlanner,
+        SlidePhraseRewriteService slidePhrases,
         SlideImageRenderer renderer,
         TtsService tts,
         VideoComposerService video,
@@ -27,6 +29,7 @@ public sealed class ProductionTools
         _store = store;
         _segmenter = segmenter;
         _slidePlanner = slidePlanner;
+        _slidePhrases = slidePhrases;
         _renderer = renderer;
         _tts = tts;
         _video = video;
@@ -99,26 +102,29 @@ public sealed class ProductionTools
         return $"Saved {segments.Count} narration scripts to {_store.ScriptsDirectory}.";
     }
 
-    [Description("Plan at most five image-slide phrases for every narration segment.")]
-    public string PlanSlidesForAllSegments()
+    [Description("Plan at most five image-slide phrases for every narration segment, then ask Ollama to rewrite each phrase as one sentence for the slide image.")]
+    public async Task<string> PlanSlidesForAllSegments()
     {
         EnsureScripts();
+        var snapshot = _store.Snapshot();
+        foreach (var segment in snapshot.Segments)
+        {
+            segment.Slides = _slidePlanner.Plan(segment.Script, _store.Options);
+        }
+
+        await _slidePhrases.RewriteAllAsync(snapshot.Segments, CancellationToken.None);
         _store.Mutate(state =>
         {
-            foreach (var segment in state.Segments)
-            {
-                segment.Slides = _slidePlanner.Plan(segment.Script, _store.Options);
-            }
-
+            state.Segments = snapshot.Segments;
             state.Status = "slides-planned";
         });
 
-        var snapshot = _store.Snapshot();
-        return $"Planned slides for {snapshot.Segments.Count} segments. Max per segment: {_store.Options.MaxSlidesPerSegment}.";
+        var slides = snapshot.Segments.Sum(s => s.Slides.Count);
+        return $"Planned {slides} slides and rewrote each as one Ollama sentence. Max per segment: {_store.Options.MaxSlidesPerSegment}.";
     }
 
-    [Description("Render PNG slides for every planned phrase. Each slide contains the phrase text for that part of the narration.")]
-    public string RenderAllSlideImages()
+    [Description("Render PNG slides for every planned phrase. Each slide shows the one-sentence Ollama rewrite of that segment excerpt, not the raw excerpt.")]
+    public async Task<string> RenderAllSlideImages()
     {
         EnsureScripts();
         var snapshot = _store.Snapshot();
@@ -133,7 +139,12 @@ public sealed class ProductionTools
             {
                 segment.Slides = segment.Slides.Take(_store.Options.MaxSlidesPerSegment).ToList();
             }
+        }
 
+        await _slidePhrases.RewriteAllAsync(snapshot.Segments, CancellationToken.None);
+
+        foreach (var segment in snapshot.Segments)
+        {
             foreach (var slide in segment.Slides)
             {
                 var path = _store.SlideImagePath(segment.Number, slide.Number);

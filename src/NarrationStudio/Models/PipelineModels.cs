@@ -29,7 +29,9 @@ public sealed class NarrationSegment
 public sealed class SlideSpec
 {
     public int Number { get; set; }
+    public string SourcePhrase { get; set; } = "";
     public string Phrase { get; set; } = "";
+    public bool PhraseRewritten { get; set; }
     public string ImagePath { get; set; } = "";
 }
 
