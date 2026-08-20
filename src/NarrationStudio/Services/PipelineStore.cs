@@ -49,18 +49,20 @@ public sealed class PipelineStore
         }
     }
 
-    public void Initialize(string transcriptPath, string outputDirectory)
+    public int Initialize(string transcriptPath, string outputDirectory)
     {
         lock (_gate)
         {
             _state.TranscriptPath = Path.GetFullPath(transcriptPath);
             _state.OutputDirectory = Path.GetFullPath(outputDirectory);
             Directory.CreateDirectory(_state.OutputDirectory);
+            var cleared = ClearGeneratedOutputsUnlocked();
             Directory.CreateDirectory(ScriptsDirectory);
             Directory.CreateDirectory(SlidesDirectory);
             Directory.CreateDirectory(AudioDirectory);
             Directory.CreateDirectory(VideoDirectory);
             PersistUnlocked();
+            return cleared;
         }
     }
 
@@ -101,7 +103,10 @@ public sealed class PipelineStore
             - Merged video ready: {merged}
             - Merged video path: {state.MergedVideoPath ?? "(none)"}
             Next required step:
-            {(!rewritten ? "rephrase the raw transcript into a 7-minute executive talk via Ollama" :
+            {(!rewritten
+                ? (Options.UseStubNarration
+                    ? "copy voice_transcript_ollama.txt into the rewritten narration"
+                    : "rephrase the raw transcript into a 7-minute executive talk via Ollama") :
               scripts < Options.SegmentCount ? "segment the rewritten narration into 8 scripts" :
               audio < Options.SegmentCount ? "synthesize remaining MP3 files" :
               slides < Options.SegmentCount ? "plan remaining slide phrases" :
@@ -126,5 +131,92 @@ public sealed class PipelineStore
 
         var path = Path.Combine(_state.OutputDirectory, "pipeline-state.json");
         File.WriteAllText(path, JsonSerializer.Serialize(_state, PipelineJsonContext.Default.PipelineState));
+    }
+
+    private int ClearGeneratedOutputsUnlocked()
+    {
+        var deleted = 0;
+        deleted += ClearDirectoryContents(ScriptsDirectory);
+        deleted += ClearDirectoryContents(SlidesDirectory);
+        deleted += ClearDirectoryContents(AudioDirectory);
+        deleted += ClearDirectoryContents(VideoDirectory);
+        deleted += ClearDirectoryContents(Path.Combine(_state.OutputDirectory, "agent-file-memory"));
+
+        foreach (var leftover in Directory.EnumerateFiles(_state.OutputDirectory, "video_*.mp4"))
+        {
+            if (DeleteWithRetry(leftover))
+            {
+                deleted++;
+            }
+        }
+
+        if (DeleteWithRetry(Path.Combine(_state.OutputDirectory, "pipeline-state.json")))
+        {
+            deleted++;
+        }
+
+        return deleted;
+    }
+
+    private static int ClearDirectoryContents(string directory)
+    {
+        if (!Directory.Exists(directory))
+        {
+            return 0;
+        }
+
+        var deleted = 0;
+        foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+        {
+            if (DeleteWithRetry(file))
+            {
+                deleted++;
+            }
+        }
+
+        foreach (var child in Directory.EnumerateDirectories(directory))
+        {
+            try
+            {
+                Directory.Delete(child, recursive: true);
+            }
+            catch (IOException)
+            {
+                // files were already removed; leftover empty folders are harmless
+            }
+        }
+
+        return deleted;
+    }
+
+    private static bool DeleteWithRetry(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return false;
+        }
+
+        IOException? last = null;
+        for (var attempt = 1; attempt <= 8; attempt++)
+        {
+            try
+            {
+                File.SetAttributes(path, FileAttributes.Normal);
+                File.Delete(path);
+                return true;
+            }
+            catch (IOException ex) when (attempt < 8)
+            {
+                last = ex;
+                Thread.Sleep(150 * attempt);
+            }
+            catch (UnauthorizedAccessException ex) when (attempt < 8)
+            {
+                last = new IOException(ex.Message, ex);
+                Thread.Sleep(150 * attempt);
+            }
+        }
+
+        throw new IOException($"Could not overwrite previous generated file: {path}. Close any player or editor using it and retry.", last);
     }
 }

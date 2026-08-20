@@ -19,9 +19,16 @@ public sealed class WorkflowHost
 
     public Workflow CreateHandoffWorkflow(ProductionCrew crew)
     {
-        return AgentWorkflowBuilder.CreateHandoffBuilderWith(crew.Coordinator)
-            .WithHandoff(crew.Coordinator, crew.NarrationRewriter, "The raw transcript has not been rephrased into a 7-minute executive talk.")
-            .WithHandoff(crew.NarrationRewriter, crew.ScriptSegmenter, "The 7-minute narration is ready to split into 8 scripts.")
+        var builder = AgentWorkflowBuilder.CreateHandoffBuilderWith(crew.Coordinator);
+
+        if (!_store.Options.UseStubNarration)
+        {
+            builder = builder
+                .WithHandoff(crew.Coordinator, crew.NarrationRewriter, "The raw transcript has not been rephrased into a 7-minute executive talk.")
+                .WithHandoff(crew.NarrationRewriter, crew.ScriptSegmenter, "The 7-minute narration is ready to split into 8 scripts.");
+        }
+
+        return builder
             .WithHandoff(crew.Coordinator, crew.ScriptSegmenter, "The rewritten narration exists but has not been split into 8 scripts.")
             .WithHandoff(crew.Coordinator, crew.SlidePlanner, "Narration scripts exist but slide phrases are missing.")
             .WithHandoff(crew.Coordinator, crew.ImageRenderer, "Slide phrases exist but PNG slides are missing.")
@@ -29,7 +36,9 @@ public sealed class WorkflowHost
             .WithHandoff(crew.Coordinator, crew.VideoComposer, "Audio and slides exist, so segment videos or the merged video can be created.")
             .WithHandoff(crew.SlidePlanner, crew.ImageRenderer, "Slide phrases are ready and should be rendered to PNG files.")
             .WithHandoffs(
-                [crew.NarrationRewriter, crew.ScriptSegmenter, crew.SlidePlanner, crew.ImageRenderer, crew.TtsProducer, crew.VideoComposer],
+                _store.Options.UseStubNarration
+                    ? [crew.ScriptSegmenter, crew.SlidePlanner, crew.ImageRenderer, crew.TtsProducer, crew.VideoComposer]
+                    : [crew.NarrationRewriter, crew.ScriptSegmenter, crew.SlidePlanner, crew.ImageRenderer, crew.TtsProducer, crew.VideoComposer],
                 crew.Coordinator,
                 "Return to the coordinator after the specialist finishes its tools.")
             .WithAutonomousMode(
@@ -41,8 +50,16 @@ public sealed class WorkflowHost
 
     public Workflow CreateSequentialWorkflow(ProductionCrew crew)
     {
-        return AgentWorkflowBuilder.BuildSequential(
-            "narration-studio-sequential",
+        AIAgent[] agents = _store.Options.UseStubNarration
+            ?
+            [
+                crew.ScriptSegmenter,
+                crew.SlidePlanner,
+                crew.ImageRenderer,
+                crew.TtsProducer,
+                crew.VideoComposer
+            ]
+            :
             [
                 crew.NarrationRewriter,
                 crew.ScriptSegmenter,
@@ -50,7 +67,9 @@ public sealed class WorkflowHost
                 crew.ImageRenderer,
                 crew.TtsProducer,
                 crew.VideoComposer
-            ]);
+            ];
+
+        return AgentWorkflowBuilder.BuildSequential("narration-studio-sequential", agents);
     }
 
     public async Task RunAsync(Workflow workflow, string userPrompt, CancellationToken cancellationToken)
@@ -87,21 +106,28 @@ public sealed class WorkflowHost
         }
     }
 
-    public string BuildUserPrompt(string transcriptPath) =>
-        $"""
-        Produce a complete narration video from this transcript file:
-        {transcriptPath}
+    public string BuildUserPrompt(string transcriptPath)
+    {
+        var rewriteStep = _store.Options.UseStubNarration
+            ? "1. The 7-minute talk is already saved as output/scripts/narration-rewritten.txt from voice_transcript_ollama.txt. Do not call Ollama. Do not rewrite. Do not use the raw transcript."
+            : "1. Submit voice_transcript.txt to Ollama and rewrite it as a 7-minute talk for a mixed audience leaning toward executives.";
 
-        Required workflow:
-        1. Submit voice_transcript.txt to Ollama and rewrite it as a 7-minute talk for a mixed audience leaning toward executives.
-        2. Segment THAT rewritten narration into 8 narration scripts. Do not segment the raw transcript.
-        3. Create at most 5 image slides per script. Each slide contains a phrase covering part of that script.
-        4. When the 8 scripts exist, create audio-01.mp3 ... audio-08.mp3.
-        5. Sync each MP3 with that segment's slides into video-01.mp4 ... video-08.mp4.
-        6. Merge the eight videos into {_store.MergedVideoFileName()}.
+        return
+            $"""
+            Produce a complete narration video from this transcript file:
+            {transcriptPath}
 
-        Use your tools. Handoff to the specialist who owns the next unfinished step.
-        Current status:
-        {_store.SummarizeForAgent()}
-        """;
+            Required workflow:
+            {rewriteStep}
+            2. Segment THAT rewritten narration into 8 narration scripts. Do not segment the raw transcript.
+            3. Create at most 5 image slides per script. Each slide contains a phrase covering part of that script.
+            4. When the 8 scripts exist, create audio-01.mp3 ... audio-08.mp3.
+            5. Sync each MP3 with that segment's slides into video-01.mp4 ... video-08.mp4.
+            6. Merge the eight videos into {_store.MergedVideoFileName()}.
+
+            Use your tools. Handoff to the specialist who owns the next unfinished step.
+            Current status:
+            {_store.SummarizeForAgent()}
+            """;
+    }
 }

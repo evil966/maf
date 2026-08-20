@@ -137,11 +137,7 @@ public sealed class ProductionTools
             foreach (var slide in segment.Slides)
             {
                 var path = _store.SlideImagePath(segment.Number, slide.Number);
-                if (!File.Exists(path) || new FileInfo(path).Length == 0)
-                {
-                    _renderer.Render(segment, slide, _store.Options, path);
-                }
-
+                _renderer.Render(segment, slide, _store.Options, path);
                 slide.ImagePath = path;
             }
         }
@@ -163,10 +159,7 @@ public sealed class ProductionTools
         foreach (var segment in state.Segments)
         {
             var path = _store.AudioPath(segment.Number);
-            if (!File.Exists(path) || new FileInfo(path).Length == 0)
-            {
-                await _tts.SynthesizeAsync(segment.Script, path, CancellationToken.None);
-            }
+            await _tts.SynthesizeAsync(segment.Script, path, CancellationToken.None);
 
             var duration = TtsService.ProbeDurationSeconds(path);
             _store.Mutate(current =>
@@ -193,10 +186,7 @@ public sealed class ProductionTools
             }
 
             var path = _store.VideoPath(segment.Number);
-            if (!File.Exists(path) || new FileInfo(path).Length == 0)
-            {
-                _video.ComposeSegment(segment, _store.Options, path);
-            }
+            _video.ComposeSegment(segment, _store.Options, path);
 
             _store.Mutate(current => current.Segments.First(s => s.Number == segment.Number).VideoPath = path);
         }

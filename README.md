@@ -62,4 +62,4 @@ Pass a transcript path as the first argument if it is not `voice_transcript.txt`
 | `AZURE_OPENAI_DEPLOYMENT_NAME` | Azure deployment name |
 | `ELEVENLABS_API_KEY` | Real TTS; otherwise Windows SAPI (then ffmpeg → MP3) |
 
-The rewrite step currently uses `voice_transcript_ollama.txt` as a stub (`Studio:UseStubNarration` = true). Set that flag to `false` to call Ollama again.
+The rewrite step currently uses `voice_transcript_ollama.txt` as a stub (`Studio:UseStubNarration` = true). That file is copied into `output/scripts/narration-rewritten.txt` **before** any agent or Ollama call. Set the flag to `false` to call Ollama again.

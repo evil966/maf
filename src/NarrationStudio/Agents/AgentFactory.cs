@@ -90,16 +90,17 @@ public sealed class AgentFactory
             instructions:
             """
             You coordinate a narration-to-video factory.
+            Previous generated files were deleted at the start of this run, so nothing is already finished.
             Always call GetPipelineStatus first.
-            Then hand off:
-            - narration_rewriter if the 7-minute Ollama talk does not exist
-            - script_segmenter if eight narration scripts do not exist
-            - slide_planner if slides are not planned
-            - image_renderer if PNG slides are missing
-            - tts_producer if audio-01.mp3 through audio-08.mp3 are missing
-            - video_composer if segment videos or the merged video are missing
+            Then hand off every specialist in order until the merged video for THIS run exists:
+            - narration_rewriter only if the 7-minute talk does not exist and stubbing is off
+            - script_segmenter if eight narration scripts do not exist (always from the rewritten narration, never the raw transcript)
+            - slide_planner to plan slides for the current scripts
+            - image_renderer to render PNG slides
+            - tts_producer to synthesize audio-01.mp3 through audio-08.mp3
+            - video_composer to compose segment videos and merge them
             When the merged video exists, tell the user the full path and stop.
-            Never skip a specialist. Never invent file names.
+            Never skip a specialist. Never invent file names. Never reuse leftover files from an earlier run.
             Later steps must use the rewritten narration, never the raw transcript.
             """,
             tools: [AIFunctionFactory.Create(_tools.GetPipelineStatus)]);
@@ -114,15 +115,14 @@ public sealed class AgentFactory
             instructions:
             """
             You prepare the spoken script for the rest of the pipeline.
-            Call LoadTranscript if you need to inspect the source, then always call RephraseTranscriptIntoNarration.
-            That tool submits the transcript to Ollama and writes the 7-minute talk.
+            Always call RephraseTranscriptIntoNarration. Do not rewrite the transcript yourself.
+            Do not call LoadTranscript. The tool loads the source and, when stubbing is on, uses voice_transcript_ollama.txt.
             Do not segment, design slides, or create audio yourself.
             After the rewritten narration exists, hand off to script_segmenter or back to coordinator.
             """,
             tools:
             [
                 AIFunctionFactory.Create(_tools.GetPipelineStatus),
-                AIFunctionFactory.Create(_tools.LoadTranscript),
                 AIFunctionFactory.Create(_tools.RephraseTranscriptIntoNarration)
             ]);
 
@@ -160,7 +160,7 @@ public sealed class AgentFactory
             Create slide phrases for each of the 8 narration scripts.
             Call PlanSlidesForAllSegments. Each segment may have at most 5 slides.
             Each slide phrase must describe that part of the narration.
-            Then hand off to image_renderer, or back to coordinator if images already exist.
+            Always re-plan for this run, then hand off to image_renderer.
             """,
             tools:
             [
@@ -177,7 +177,7 @@ public sealed class AgentFactory
             description: "Renders PNG slides containing the planned phrase text.",
             instructions:
             """
-            Render one PNG slide for every planned phrase.
+            Render one PNG slide for every planned phrase. Always overwrite previous PNGs.
             Call RenderAllSlideImages, then hand control back to coordinator.
             """,
             tools:
@@ -195,7 +195,7 @@ public sealed class AgentFactory
             description: "Creates audio-01.mp3 through audio-08.mp3 from the narration scripts.",
             instructions:
             """
-            After the 8 narration scripts exist, synthesize one MP3 per script.
+            After the 8 narration scripts exist, synthesize one MP3 per script. Always overwrite previous MP3s.
             Call SynthesizeAllAudioAsync. File names must be audio-01.mp3 ... audio-08.mp3.
             Then hand control back to coordinator.
             """,
@@ -215,6 +215,7 @@ public sealed class AgentFactory
             instructions:
             """
             Create video-01.mp4 ... video-08.mp4 by syncing each segment's slides to that segment's MP3.
+            Always overwrite previous segment videos, then merge.
             Call ComposeAllSegmentVideos, then MergeAllVideos.
             The merged file must use the timestamped name from the pipeline.
             Then hand control back to coordinator.
@@ -288,7 +289,10 @@ public sealed class AgentFactory
             return new OpenAIClient(openAiKey).GetChatClient(model).AsIChatClient();
         }
 
-        _logger.LogInformation("Using local Ollama for agent orchestration.");
+        _logger.LogInformation(
+            _options.UseStubNarration
+                ? "Using local Ollama for specialist agents only. Narration rewrite is stubbed from voice_transcript_ollama.txt."
+                : "Using local Ollama for agent orchestration.");
         return _ollamaFactory.Create();
     }
 

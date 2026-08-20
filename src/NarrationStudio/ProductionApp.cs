@@ -5,6 +5,7 @@ using NarrationStudio.Agents;
 using NarrationStudio.Configuration;
 using NarrationStudio.Orchestration;
 using NarrationStudio.Services;
+using NarrationStudio.Tools;
 
 namespace NarrationStudio;
 
@@ -15,6 +16,8 @@ public sealed class ProductionApp
     private readonly AgentFactory _agentFactory;
     private readonly WorkflowHost _workflowHost;
     private readonly DirectPipelineRunner _direct;
+    private readonly ProductionTools _tools;
+    private readonly TtsService _tts;
     private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<ProductionApp> _logger;
 
@@ -24,6 +27,8 @@ public sealed class ProductionApp
         AgentFactory agentFactory,
         WorkflowHost workflowHost,
         DirectPipelineRunner direct,
+        ProductionTools tools,
+        TtsService tts,
         IHostApplicationLifetime lifetime,
         ILogger<ProductionApp> logger)
     {
@@ -32,6 +37,8 @@ public sealed class ProductionApp
         _agentFactory = agentFactory;
         _workflowHost = workflowHost;
         _direct = direct;
+        _tools = tools;
+        _tts = tts;
         _lifetime = lifetime;
         _logger = logger;
     }
@@ -48,16 +55,31 @@ public sealed class ProductionApp
         var outputDirectory = ResolveOutputDirectory();
         var orchestration = ResolveOrchestration(args);
 
-        _store.Initialize(transcriptPath, outputDirectory);
+        var cleared = _store.Initialize(transcriptPath, outputDirectory);
 
         Console.WriteLine("Narration Studio");
         Console.WriteLine($"Transcript : {transcriptPath}");
         Console.WriteLine($"Output     : {outputDirectory}");
         Console.WriteLine($"Mode       : {orchestration}");
+        Console.WriteLine(cleared == 0
+            ? "Previous  : none (clean output folder)"
+            : $"Previous  : cleared {cleared} generated files");
+        if (_options.UseStubNarration)
+        {
+            Console.WriteLine($"Rewrite    : stub ({_options.StubNarrationPath})");
+        }
+
+        Console.WriteLine($"TTS        : {_tts.DescribeProvider()}");
+
         Console.WriteLine();
 
         try
         {
+            if (_options.UseStubNarration)
+            {
+                Console.WriteLine(await _tools.RephraseTranscriptIntoNarration());
+            }
+
             if (orchestration is "direct" || !_agentFactory.TryCreate(out var crew) || crew is null)
             {
                 await _direct.RunAsync();

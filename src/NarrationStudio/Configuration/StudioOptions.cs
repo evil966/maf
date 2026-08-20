@@ -11,7 +11,8 @@ public sealed class StudioOptions
     public string OpenAIModel { get; set; } = "gpt-4o-mini";
     public string AzureOpenAIEndpoint { get; set; } = "";
     public string AzureOpenAIDeployment { get; set; } = "gpt-4o-mini";
-    public string ElevenLabsVoiceId { get; set; } = "21m00Tcm4TlvDq8ikWAM";
+    public string ElevenLabsApiKey { get; set; } = "";
+    public string ElevenLabsVoiceId { get; set; } = "UPXQvvSDDubCtocmbltQ";
     public string ElevenLabsModelId { get; set; } = "eleven_multilingual_v2";
     public int VideoWidth { get; set; } = 1920;
     public int VideoHeight { get; set; } = 1080;

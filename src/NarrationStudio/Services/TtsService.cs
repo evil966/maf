@@ -29,7 +29,7 @@ public sealed class TtsService
         CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(mp3Path)!);
-        var apiKey = Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY");
+        var apiKey = ResolveApiKey();
 
         if (!string.IsNullOrWhiteSpace(apiKey))
         {
@@ -73,10 +73,33 @@ public sealed class TtsService
             "application/json");
 
         using var response = await _http.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new InvalidOperationException(
+                $"ElevenLabs TTS failed ({(int)response.StatusCode}) for voice {_options.ElevenLabsVoiceId}: {body}");
+        }
+
         await using var output = File.Create(mp3Path);
         await response.Content.CopyToAsync(output, cancellationToken);
-        _logger.LogInformation("Wrote ElevenLabs audio {Path}", mp3Path);
+        _logger.LogInformation("Wrote ElevenLabs audio {Path} with voice {VoiceId}.", mp3Path, _options.ElevenLabsVoiceId);
+    }
+
+    public string DescribeProvider()
+    {
+        return string.IsNullOrWhiteSpace(ResolveApiKey())
+            ? "Windows SAPI (no ElevenLabs API key)"
+            : $"ElevenLabs ({_options.ElevenLabsVoiceId})";
+    }
+
+    private string ResolveApiKey()
+    {
+        if (!string.IsNullOrWhiteSpace(_options.ElevenLabsApiKey))
+        {
+            return _options.ElevenLabsApiKey.Trim();
+        }
+
+        return Environment.GetEnvironmentVariable("ELEVENLABS_API_KEY")?.Trim() ?? "";
     }
 
     private static void SynthesizeWindowsSpeech(string script, string wavPath)

@@ -19,20 +19,16 @@ public sealed class DirectPipelineRunner
 
     public async Task<string> RunAsync()
     {
-        _logger.LogInformation("Running deterministic production tools.");
+        _logger.LogInformation("Running deterministic production tools and overwriting generated files.");
         Console.WriteLine(_tools.GetPipelineStatus());
 
-        var state = _store.Snapshot();
-        if (string.IsNullOrWhiteSpace(state.NarrationPath) || !File.Exists(state.NarrationPath))
+        if (string.IsNullOrWhiteSpace(_store.Snapshot().NarrationPath)
+            || !File.Exists(_store.Snapshot().NarrationPath))
         {
             Console.WriteLine(await _tools.RephraseTranscriptIntoNarration());
         }
 
-        if (_store.Snapshot().Segments.Count != _store.Options.SegmentCount)
-        {
-            Console.WriteLine(_tools.SegmentTranscriptIntoEightScripts());
-        }
-
+        Console.WriteLine(_tools.SegmentTranscriptIntoEightScripts());
         Console.WriteLine(_tools.PlanSlidesForAllSegments());
         Console.WriteLine(_tools.RenderAllSlideImages());
         Console.WriteLine(await _tools.SynthesizeAllAudioAsync());
