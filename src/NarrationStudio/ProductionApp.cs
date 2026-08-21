@@ -70,6 +70,8 @@ public sealed class ProductionApp
         }
 
         Console.WriteLine($"TTS        : {_tts.DescribeProvider()}");
+        Console.WriteLine($"Memory     : {_store.AgentMemoryDirectory}");
+        _store.WriteRunHeader(orchestration, _tts.DescribeProvider(), _options.UseStubNarration);
 
         Console.WriteLine();
 

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Narration Studio guardrails</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #4a5160;
+    --accent: #0f1c2e;
+    --teal: #1b3a4b;
+    --gold: #c9a227;
+    --rule: #d7dde5;
+    --code: #f4f6f8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: #fff;
+    font-family: "Segoe UI", Calibri, "Liberation Sans", sans-serif;
+    font-size: 10.8pt;
+    line-height: 1.48;
+  }
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left {
+      content: "Narration Studio  ·  Guardrails";
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+  }
+  h1 {
+    font-size: 20pt;
+    color: var(--accent);
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 3mm;
+    margin: 0 0 6mm 0;
+  }
+  h2 {
+    font-size: 13.5pt;
+    color: var(--accent);
+    margin: 7mm 0 3mm 0;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px solid var(--rule);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    color: var(--teal);
+    margin: 5mm 0 2mm 0;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 3.2mm 0; }
+  ul, ol { margin: 0 0 3.5mm 1.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 5mm 0;
+    font-size: 9.4pt;
+  }
+  th, td {
+    border: 1px solid #cfd6de;
+    padding: 2.2mm 2.6mm;
+    vertical-align: top;
+    text-align: left;
+  }
+  th { background: #0f1c2e; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  code {
+    font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 9pt;
+    background: var(--code);
+    padding: 0 1.3mm;
+    border-radius: 2px;
+  }
+  pre {
+    background: #0f1c2e;
+    color: #e8eef3;
+    padding: 3.5mm 4mm;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.5pt;
+    line-height: 1.42;
+    white-space: pre-wrap;
+    word-break: break-word;
+    page-break-inside: avoid;
+    margin: 0 0 4.5mm 0;
+  }
+  .lede { color: var(--muted); }
+  .callout {
+    border-left: 4px solid var(--gold);
+    background: #eef4f8;
+    padding: 3mm 4mm;
+    margin: 0 0 5mm 0;
+  }
+  .callout.warn {
+    background: #f8f1e4;
+    border-left-color: #b7791f;
+  }
+</style>
+</head>
+<body>
+
+<h1>Narration Studio guardrails</h1>
+<p class="lede">How guardrails are implemented and where they actually run.</p>
+<div class="callout"><b>Confirmed</b> means the behavior is in this repository’s source. <b>Inferred</b> means it comes from Microsoft Agent Framework (MAF) middleware.</div>
+
+<h2>Summary</h2>
+<p>Guardrails in this app are <b>agent middleware</b>, not a global security layer. They wrap every MAF specialist when <code>handoff</code> or <code>sequential</code> orchestration builds a crew. <b>Direct mode does not run them.</b> Hard production caps (exactly 8 scripts, at most 5 slides) are enforced in tools by throwing, not by <code>ProductionGuardrails</code>.</p>
+<p>There are three related mechanisms:</p>
+<ol>
+  <li><b><code>ProductionGuardrails</code></b> — MAF middleware on each agent (<code>RunAsync</code> + <code>FunctionAsync</code>).</li>
+  <li><b>Prompt guardrails</b> — text injected by <code>ProductionContextProvider</code> (“Guardrails you must obey”).</li>
+  <li><b>Tool validation</b> — <code>ProductionTools</code> throws if script/slide counts are wrong.</li>
+</ol>
+<p>Only (1) can refuse a model call before the LLM runs. (2) is advisory. (3) runs whether or not agents are used.</p>
+
+<h2>Where they are wired</h2>
+<p>In <code>AgentFactory.TryCreate</code>, one <code>ProductionGuardrails</code> instance is created and passed into every agent:</p>
+<pre>var guardrails = new ProductionGuardrails(_options, _loggerFactory.CreateLogger&lt;ProductionGuardrails&gt;());</pre>
+<p>Each agent is then wrapped:</p>
+<pre>return agent
+    .AsBuilder()
+    .Use(guardrails.RunAsync, null)
+    .Use(guardrails.FunctionAsync)
+    .Build();</pre>
+<p>Source: <code>src/NarrationStudio/Agents/AgentFactory.cs</code>. <b>Inferred:</b> <code>.Use(RunAsync)</code> runs around the agent’s chat turn; <code>.Use(FunctionAsync)</code> runs around each tool invocation.</p>
+<p><code>DirectPipelineRunner</code> never constructs or calls <code>ProductionGuardrails</code>.</p>
+
+<h2>RunAsync — message filter and block</h2>
+<p>File: <code>src/NarrationStudio/Guardrails/ProductionGuardrails.cs</code>.</p>
+<p>Before the inner agent runs:</p>
+<ol>
+  <li>Every inbound <code>ChatMessage</code> is passed through <code>FilterMessage</code>.</li>
+  <li>If any filtered message text contains <code>[BLOCKED</code>, the inner agent is <b>not</b> called. The user gets a fixed refusal: stay on transcript segmentation, slides, TTS, and video assembly. A warning is logged: <code>Guardrail blocked an inbound request.</code></li>
+  <li>Otherwise the inner agent runs on the <b>filtered</b> messages.</li>
+  <li>Outbound assistant messages are filtered again (redaction only; blocked terms apply only to <code>ChatRole.User</code>).</li>
+</ol>
+
+<h3>FilterMessage</h3>
+<p><b>Blocked terms</b> (case-insensitive substring on <b>user</b> messages only): <code>harmful</code>, <code>illegal</code>, <code>violence</code>, <code>exploit</code>, <code>malware</code>, <code>bypass paywall</code>.</p>
+<p>A match replaces the entire user message with <code>[BLOCKED: content outside production policy]</code>, which then triggers the short-circuit in <code>RunAsync</code>.</p>
+<p><b>PII redaction</b> (all roles):</p>
+<ul>
+  <li>Emails matching <code>\b[\w\.-]+@[\w\.-]+\.\w+\b</code> → <code>[REDACTED-EMAIL]</code></li>
+  <li>US-style phones <code>\b\d{3}-\d{3}-\d{4}\b</code> → <code>[REDACTED-PHONE]</code></li>
+</ul>
+<p>This does <b>not</b> redact transcripts on disk, ElevenLabs TTS payloads, or Direct-mode tool inputs. It only rewrites chat messages that pass through the agent middleware.</p>
+<p>Substring blocking is naive: a user message that contains “harmful” in an unrelated sentence is refused. A jailbreak that avoids those six strings is not.</p>
+
+<h2>FunctionAsync — tool wrapper</h2>
+<p>Every tool call from an agent is logged (<code>Tool {Name} starting</code> / <code>finished</code>).</p>
+<p>If the tool name contains <code>"Slide"</code> and the string result contains the word <code>"slide"</code> more times than <code>MaxSlidesPerSegment * SegmentCount</code> (default 5 × 8 = 40), it logs:</p>
+<p><code>Slide-count guardrail trimmed an oversized tool result.</code></p>
+<div class="callout warn"><b>Confirmed:</b> it does not trim or reject the result. The original tool return value is passed through unchanged. The 8-script / 5-slide caps that actually stop the pipeline are in <code>ProductionTools</code> (<code>EnsureScripts</code>, <code>Take(MaxSlidesPerSegment)</code>, <code>SaveNarrationScripts</code> count check).</div>
+
+<h2>Prompt “guardrails” (not middleware)</h2>
+<p><code>ProductionContextProvider.ProvideAIContextAsync</code> injects instructions such as:</p>
+<ul>
+  <li>Rewrite the raw transcript before other steps (unless stubbing already did).</li>
+  <li>Exactly <code>SegmentCount</code> scripts from the rewritten talk, never the raw transcript.</li>
+  <li>At most <code>MaxSlidesPerSegment</code> slides per segment.</li>
+  <li>Exact audio/video file names.</li>
+  <li>Use tools; do not invent file names.</li>
+  <li>Stay on the narration-to-video task.</li>
+</ul>
+<p>That is <b>prompt policy</b>. A model can ignore it. Middleware + tool throws are the enforcement layers, and even those are limited as above.</p>
+
+<h2>Request flow (agent mode)</h2>
+<pre>User / workflow message
+    → ProductionGuardrails.RunAsync
+        → FilterMessage (block terms / redact PII)
+        → if [BLOCKED] → refusal, stop
+        → inner agent (LLM + tools)
+            → each tool: FunctionAsync (log; optional unused slide warning)
+            → ProductionTools (real caps: throw on bad counts)
+        → FilterMessage on outbound messages
+    → agent reply</pre>
+<p>Direct mode skips the first and last boxes and calls <code>ProductionTools</code> only.</p>
+
+<h2>What is not covered</h2>
+<table>
+  <tr><th>Gap</th><th>Detail</th></tr>
+  <tr><td>Direct orchestration</td><td>No <code>ProductionGuardrails</code> at all</td></tr>
+  <tr><td>Tool arguments</td><td><code>FunctionAsync</code> does not inspect or sanitize inputs</td></tr>
+  <tr><td>Slide-count “trim”</td><td>Warning only; result not modified</td></tr>
+  <tr><td>Transcript / TTS / files</td><td>No PII redaction</td></tr>
+  <tr><td>Blocked-term list</td><td>Six English substrings; easy to evade</td></tr>
+  <tr><td>Auth / tenancy</td><td>None; this is a local console app</td></tr>
+</table>
+
+<h2>Key files</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>src/NarrationStudio/Guardrails/ProductionGuardrails.cs</code></td><td>Blocked terms, PII regex, tool logging, unused slide warning</td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Attaches middleware to every specialist</td></tr>
+  <tr><td><code>src/NarrationStudio/Memory/ProductionContextProvider.cs</code></td><td>Prompt-level “Guardrails you must obey”</td></tr>
+  <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Hard 8-script / 5-slide validation</td></tr>
+  <tr><td><code>src/NarrationStudio/Orchestration/DirectPipelineRunner.cs</code></td><td>No guardrail middleware</td></tr>
+</table>
+
+</body>
+</html>

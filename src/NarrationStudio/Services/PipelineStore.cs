@@ -29,6 +29,9 @@ public sealed class PipelineStore
     public string SlidesDirectory => Path.Combine(OutputDirectory, "slides");
     public string AudioDirectory => Path.Combine(OutputDirectory, "audio");
     public string VideoDirectory => Path.Combine(OutputDirectory, "video");
+    public string AgentMemoryRoot => Path.Combine(OutputDirectory, "agent-file-memory");
+    public string AgentMemoryDirectory => Path.Combine(AgentMemoryRoot, $"production-notes-{_state.RunId}");
+    public string AgentMemoryWorkingFolder => Path.GetFileName(AgentMemoryDirectory);
 
     public PipelineState Snapshot()
     {
@@ -61,7 +64,9 @@ public sealed class PipelineStore
             Directory.CreateDirectory(SlidesDirectory);
             Directory.CreateDirectory(AudioDirectory);
             Directory.CreateDirectory(VideoDirectory);
+            Directory.CreateDirectory(AgentMemoryDirectory);
             PersistUnlocked();
+            WriteRunHeaderUnlocked("starting");
             return cleared;
         }
     }
@@ -79,7 +84,15 @@ public sealed class PipelineStore
 
     public string SummarizeForAgent()
     {
-        var state = Snapshot();
+        lock (_gate)
+        {
+            return SummarizeUnlocked();
+        }
+    }
+
+    private string SummarizeUnlocked()
+    {
+        var state = _state;
         var rewritten = !string.IsNullOrWhiteSpace(state.NarrationPath) && File.Exists(state.NarrationPath);
         var scripts = state.Segments.Count(s => !string.IsNullOrWhiteSpace(s.Script));
         var slides = state.Segments.Count(s => s.Slides.Count > 0);
@@ -102,6 +115,7 @@ public sealed class PipelineStore
             - Segment videos: {videos}/{Options.SegmentCount}
             - Merged video ready: {merged}
             - Merged video path: {state.MergedVideoPath ?? "(none)"}
+            - Agent file memory: {AgentMemoryDirectory}
             Next required step:
             {(!rewritten
                 ? (Options.UseStubNarration
@@ -131,6 +145,61 @@ public sealed class PipelineStore
 
         var path = Path.Combine(_state.OutputDirectory, "pipeline-state.json");
         File.WriteAllText(path, JsonSerializer.Serialize(_state, PipelineJsonContext.Default.PipelineState));
+        WriteMemorySnapshotUnlocked();
+    }
+
+    public void WriteRunHeader(string orchestration, string ttsProvider, bool stubNarration)
+    {
+        lock (_gate)
+        {
+            WriteRunHeaderUnlocked(orchestration, ttsProvider, stubNarration);
+        }
+    }
+
+    private void WriteRunHeaderUnlocked(string orchestration, string ttsProvider = "", bool? stubNarration = null)
+    {
+        if (string.IsNullOrWhiteSpace(_state.OutputDirectory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(AgentMemoryDirectory);
+        var stub = stubNarration is null
+            ? Options.UseStubNarration.ToString()
+            : stubNarration.Value.ToString();
+        File.WriteAllText(
+            Path.Combine(AgentMemoryDirectory, "run.txt"),
+            $"""
+            RunId        : {_state.RunId}
+            StartedAt    : {_state.StartedAt:o}
+            Orchestration: {orchestration}
+            StubNarration: {stub}
+            TTS          : {(string.IsNullOrWhiteSpace(ttsProvider) ? "(not recorded yet)" : ttsProvider)}
+            Transcript   : {_state.TranscriptPath}
+            Output       : {_state.OutputDirectory}
+            MemoryFolder : {AgentMemoryDirectory}
+
+            Direct mode does not start MAF FileMemoryProvider, so this folder is filled
+            by Narration Studio snapshots (run.txt, pipeline-status.txt, notes.txt).
+            Handoff/sequential may also write MAF files here.
+            """);
+        WriteMemorySnapshotUnlocked();
+    }
+
+    private void WriteMemorySnapshotUnlocked()
+    {
+        if (string.IsNullOrWhiteSpace(_state.OutputDirectory))
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(AgentMemoryDirectory);
+        File.WriteAllText(Path.Combine(AgentMemoryDirectory, "pipeline-status.txt"), SummarizeUnlocked());
+        File.WriteAllText(
+            Path.Combine(AgentMemoryDirectory, "notes.txt"),
+            _state.Notes.Count == 0
+                ? "(no agent or tool notes yet)"
+                : string.Join(Environment.NewLine + Environment.NewLine, _state.Notes));
     }
 
     private int ClearGeneratedOutputsUnlocked()
@@ -140,7 +209,6 @@ public sealed class PipelineStore
         deleted += ClearDirectoryContents(SlidesDirectory);
         deleted += ClearDirectoryContents(AudioDirectory);
         deleted += ClearDirectoryContents(VideoDirectory);
-        deleted += ClearDirectoryContents(Path.Combine(_state.OutputDirectory, "agent-file-memory"));
 
         foreach (var leftover in Directory.EnumerateFiles(_state.OutputDirectory, "video_*.mp4"))
         {

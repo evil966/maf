@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Narration Studio as a full AI agentic system</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #4a5160;
+    --accent: #0f1c2e;
+    --teal: #1b3a4b;
+    --gold: #c9a227;
+    --rule: #d7dde5;
+    --code: #f4f6f8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: #fff;
+    font-family: "Segoe UI", Calibri, "Liberation Sans", sans-serif;
+    font-size: 10.8pt;
+    line-height: 1.48;
+  }
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left {
+      content: "Narration Studio  ·  Full agentic system option";
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+  }
+  h1 {
+    font-size: 20pt;
+    color: var(--accent);
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 3mm;
+    margin: 0 0 6mm 0;
+  }
+  h2 {
+    font-size: 13.5pt;
+    color: var(--accent);
+    margin: 7mm 0 3mm 0;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px solid var(--rule);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    color: var(--teal);
+    margin: 5mm 0 2mm 0;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 3.2mm 0; }
+  ul, ol { margin: 0 0 3.5mm 1.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  a { color: var(--teal); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 5mm 0;
+    font-size: 9.4pt;
+    page-break-inside: auto;
+  }
+  th, td {
+    border: 1px solid #cfd6de;
+    padding: 2.2mm 2.6mm;
+    vertical-align: top;
+    text-align: left;
+  }
+  th { background: #0f1c2e; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  code {
+    font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 9pt;
+    background: var(--code);
+    padding: 0 1.3mm;
+    border-radius: 2px;
+  }
+  pre {
+    background: #0f1c2e;
+    color: #e8eef3;
+    padding: 3.5mm 4mm;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.5pt;
+    line-height: 1.42;
+    white-space: pre-wrap;
+    word-break: break-word;
+    page-break-inside: avoid;
+    margin: 0 0 4.5mm 0;
+  }
+  .lede { color: var(--muted); }
+  .callout {
+    border-left: 4px solid var(--gold);
+    background: #eef4f8;
+    padding: 3mm 4mm;
+    margin: 0 0 5mm 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Narration Studio as a full AI agentic system</h1>
+<p class="lede">The <b>option</b> of evolving this app from a scripted multi-agent factory into a full AI agentic system. This is not how the app works today.</p>
+<div class="callout"><b>Confirmed</b> means current behavior in this repository’s source. <b>Proposed</b> means work that is not implemented. <b>Inferred</b> means industry definition, not a type in this repo. Related: <code>docs/harness-engineering.md</code> (runtime scaffold). A harness is necessary but not sufficient for an agentic product.</div>
+
+<h2>Verdict</h2>
+<p>Narration Studio is a <b>scripted multi-agent pipeline</b> with a deterministic fallback. It is <b>not</b> a full agentic system.</p>
+<p>The coordinator does not invent work; it walks a known sequence (rewrite → 8 scripts → slides → TTS → merge). <code>DirectPipelineRunner</code> is the more honest system: tools with an LLM bolted on. A full agentic system would <b>set or refine goals, perceive results, remember across runs, recover from partial failure, and fail a run that does not meet a machine check</b> — even if an agent said “Done.”</p>
+<p>If the product stays “one transcript in, one mp4 out,” <b>direct mode + tools + checks</b> can be the complete system. Agents remain an optional control plane. A system that accepts mid-run goals such as “make it shorter and change the voice” is a different product. You prepare for that by keeping all side effects in <code>ProductionTools</code> and adding critic / resume / approve / verify — not by thickening coordinator prompts.</p>
+
+<h2>Harness vs agentic system</h2>
+<table>
+  <tr><th></th><th>Harness (see companion note)</th><th>Full agentic system</th></tr>
+  <tr><td>Question</td><td>Can the model only act through a controlled runtime?</td><td>Can the system pursue a goal, see the world, and correct itself?</td></tr>
+  <tr><td>Today</td><td>Partially present</td><td>Missing perception, resume, approve, verify, remember, recover</td></tr>
+  <tr><td>Stop condition</td><td>Coordinator prompt + failover if merge missing</td><td>Files + explicit success predicate</td></tr>
+</table>
+
+<h2>What is already present (confirmed)</h2>
+<ul>
+  <li>A <b>closed task</b>: transcript → 8 scripts → slides → audio → merged video.</li>
+  <li><b>Specialists</b> that call <code>ProductionTools</code> (they do not write PNGs, MP3s, or MP4s themselves).</li>
+  <li><b>Handoff / sequential</b> graphs plus <b>direct failover</b> if the merged file is missing.</li>
+  <li><b>Live pipeline status</b> injected into agent prompts (<code>ProductionContextProvider</code>).</li>
+  <li><b>Light guardrails</b> on agent chat only (not direct mode).</li>
+  <li><b>Per-run snapshots</b> under <code>output/agent-file-memory/production-notes-{RunId}/</code>.</li>
+</ul>
+
+<h2>What a full agentic system still needs</h2>
+<table>
+  <tr><th>Layer</th><th>Needed</th><th>Today (confirmed)</th></tr>
+  <tr><td>Goal / contract</td><td>Explicit run goal + success predicate (files exist, counts, duration) that <b>fails the process</b> if unmet</td><td>Console <code>Done:</code> plus failover if merge missing; no post-run checker</td></tr>
+  <tr><td>Planner vs executor</td><td>A planner that decomposes <i>this</i> run (skip rewrite if stub, retry TTS 03 only)</td><td>Fixed specialist order; prompts hardcode “8”</td></tr>
+  <tr><td>Perception / critic</td><td>An agent or tool that <b>looks at outputs</b> — slide text vs script, audio duration vs 7 minutes, ffmpeg errors — and sends work back</td><td>No critic. Ollama writes slide sentences; nothing reviews the PNG or MP4</td></tr>
+  <tr><td>Human-in-the-loop</td><td>Pause after rewritten talk / slides before spending ElevenLabs</td><td>Fire-and-forget console run</td></tr>
+  <tr><td>Durable state / resume</td><td>Checkpoint: if <code>audio-06</code> fails, restart from 06</td><td>Wipe media on start; crash loses the run</td></tr>
+  <tr><td>Recovery</td><td>Retry, backoff, fallback (ElevenLabs → SAPI), budget cap</td><td>Throw and exit. If an ElevenLabs key is set, HTTP failure does not fall back to SAPI</td></tr>
+  <tr><td>Memory</td><td>Preferences and priors across runs (voice, brand, last good talk)</td><td>Per-run snapshots; not retrieval. See <code>docs/memory-vs-mem0.md</code></td></tr>
+  <tr><td>Observability</td><td>Traces: tool, tokens, seconds, cost, which agent</td><td>Console logs</td></tr>
+  <tr><td>Eval loop</td><td>Golden fixture + quality gates; feed failures back into prompts/tools</td><td>No test project</td></tr>
+  <tr><td>Identity / tenancy</td><td>User/run isolation if it ever leaves one workstation</td><td>Named mutex, one process</td></tr>
+  <tr><td>Cancellation / budget</td><td>Stop Ollama/TTS on Ctrl+C; max spend / max seconds</td><td><code>CancellationToken.None</code> on the expensive calls</td></tr>
+  <tr><td>Tool policy</td><td>Same validation on <b>every</b> path, including direct</td><td>Guardrails skip direct mode. See <code>docs/guardrails.md</code></td></tr>
+</table>
+<p>Optional later (only if the product becomes open-ended): dynamic tool discovery (MCP), RAG over extra source docs, parallel specialists, a scheduler. Those make a <b>platform</b>, not this factory.</p>
+
+<h2>What “fully agentic” should mean for this app</h2>
+<p>Not “more agents.” A closed factory becomes agentic when:</p>
+<ol>
+  <li><b>The world is the source of truth</b> — <code>pipeline-state.json</code> + files, not the model’s last message.</li>
+  <li><b>A critic can reject work</b> — e.g. “slide 03-02 is not one sentence” → re-run phrase rewrite only.</li>
+  <li><b>Partial failure is recoverable</b> — resume; do not wipe everything unless the user asks.</li>
+  <li><b>A human can approve the expensive step</b> — narration and slide text before TTS/video.</li>
+  <li><b>A check fails the run</b> even if an agent said it finished.</li>
+  <li><b>Traces exist</b> so you can change the harness from real failures.</li>
+</ol>
+
+<h2>Practical order (proposed)</h2>
+<p>Do these on the current architecture. Do not replace Microsoft Agent Framework first.</p>
+<ol>
+  <li><b>Success predicate</b> — <code>HarnessChecks</code> after merge (8 scripts, ≤5 slides, 8 mp3s, merged file, status <code>complete</code>).</li>
+  <li><b>Resume</b> — stop deleting good audio/video by default; wipe only with a flag.</li>
+  <li><b>Cancellation + retries</b> — token through Ollama/TTS/ffmpeg; retry TTS per segment.</li>
+  <li><b>Critic pass</b> — cheap first: duration vs <code>TargetTalkMinutes</code>, empty slides, missing files. Later: a model reviews slide sentences against the script.</li>
+  <li><b>Approve gate</b> — write <code>narration-rewritten.txt</code>, print the path, wait for <code>--approve</code> or a keypress before TTS.</li>
+  <li><b><code>events.jsonl</code></b> in <code>production-notes-{RunId}</code>.</li>
+  <li><b>Option-driven prompts</b> — no hardcoded “8”; interpolate <code>StudioOptions</code>.</li>
+  <li><b>Outer harness</b> — <code>AGENTS.md</code> + one test, so coding agents do not fight the factory.</li>
+</ol>
+<p><b>Defer:</b> mem0, extra specialists, MCP, multi-user, swapping MAF.</p>
+
+<h2>Target shape (proposed)</h2>
+<pre>goal: produce video_{RunId}.mp4 from this transcript
+    → plan (skip stages that already satisfy checks)
+    → ProductionTools only
+    → critic / HarnessChecks
+    → if reject: retry the failing stage only
+    → optional human approve before TTS
+    → events.jsonl + pipeline-state.json + production-notes-{RunId}
+    → fail the process if checks fail (even if the model said “Done”)</pre>
+<p>Agents become interchangeable. Direct mode stays the reference executor.</p>
+
+<h2>Honest limit</h2>
+<p>If the product stays one talk → one video, do not build an open-ended planner. Build <b>perceive, resume, approve, verify, remember, recover</b> on top of <code>ProductionTools</code>. That is the agentic option for <i>this</i> application.</p>
+
+<h2>Key files (current system)</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>src/NarrationStudio/ProductionApp.cs</code></td><td>Mode selection, failover to direct</td></tr>
+  <tr><td><code>src/NarrationStudio/Orchestration/DirectPipelineRunner.cs</code></td><td>Deterministic executor</td></tr>
+  <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Only I/O surface; keep it that way</td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Crew and prompts (hardcoded “8”)</td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/WorkflowHost.cs</code></td><td>Scripted graph, not a dynamic planner</td></tr>
+  <tr><td><code>src/NarrationStudio/Services/PipelineStore.cs</code></td><td>Run state; wipe-on-start; snapshots</td></tr>
+</table>
+
+</body>
+</html>

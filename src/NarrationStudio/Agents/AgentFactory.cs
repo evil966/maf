@@ -72,10 +72,11 @@ public sealed class AgentFactory
             return false;
         }
 
-        var memoryRoot = Path.Combine(_store.OutputDirectory, "agent-file-memory");
+        Directory.CreateDirectory(_store.AgentMemoryDirectory);
         var fileMemory = new FileMemoryProvider(
-            new FileSystemAgentFileStore(memoryRoot),
-            _ => new FileMemoryState { WorkingFolder = "production-notes" });
+            new FileSystemAgentFileStore(_store.AgentMemoryRoot),
+            _ => new FileMemoryState { WorkingFolder = _store.AgentMemoryWorkingFolder });
+        _logger.LogInformation("Agent file memory for this run: {Path}", _store.AgentMemoryDirectory);
 
         var guardrails = new ProductionGuardrails(_options, _loggerFactory.CreateLogger<ProductionGuardrails>());
         IList<AIContextProvider> providers = [_context, fileMemory];

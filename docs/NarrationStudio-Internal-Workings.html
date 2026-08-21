@@ -206,7 +206,7 @@
     <div><b>Project</b> &nbsp; src/NarrationStudio/NarrationStudio.csproj &nbsp;·&nbsp; net10.0-windows</div>
     <div><b>Audience</b> &nbsp; Developers onboarding to the codebase</div>
     <div><b>Classification</b> &nbsp; Internal. Contains architecture and configuration details; API keys are not reproduced here.</div>
-    <div><b>Date</b> &nbsp; 21 August 2026</div>
+    <div><b>Date</b> &nbsp; 21 August 2026 &nbsp;·&nbsp; <b>Revision</b> 2</div>
     <div><b>Status</b> &nbsp; Confirmed against current source. Where behavior is implied by a library rather than this repo, that is labelled <i>inferred</i>.</div>
   </div>
 </section>
@@ -220,7 +220,9 @@
     <tr><td>Source of truth</td><td>C# source under <code>src/NarrationStudio</code>, <code>appsettings.json</code>, <code>README.md</code>, and observed runtime behavior.</td></tr>
     <tr><td>Out of scope</td><td>Microsoft Agent Framework library internals except as used here. ElevenLabs / Ollama / ffmpeg internals except as called.</td></tr>
     <tr><td>Secrets policy</td><td>This document names configuration keys but does not print secret values.</td></tr>
+    <tr><td>Companion notes</td><td><code>docs/memory-vs-mem0.pdf</code>, <code>docs/guardrails.pdf</code>, <code>docs/harness-engineering.pdf</code>, <code>docs/agentic-system.pdf</code></td></tr>
   </table>
+  <p><b>Revision 2</b> (21 August 2026) adds: Ollama one-sentence slide text; rephrase duration logs; timestamped agent-memory folders that are <i>not</i> wiped; <code>run.txt</code> / <code>pipeline-status.txt</code> / <code>notes.txt</code> snapshots in every mode including direct; ElevenLabs key from <code>Studio:ElevenLabsApiKey</code>.</p>
 
   <div class="callout">
     <div class="label">How to read “confirmed” vs “inferred”</div>
@@ -261,7 +263,7 @@
   <li>Read <code>voice_transcript.txt</code> (raw notes / transcript).</li>
   <li>Rewrite it into a spoken ~7-minute talk, saved as <code>output/scripts/narration-rewritten.txt</code>. Today this rewrite is usually <b>stubbed</b> from <code>voice_transcript_ollama.txt</code> when <code>Studio:UseStubNarration</code> is true; otherwise it calls local Ollama.</li>
   <li>Split that rewritten talk into exactly <b>8</b> narration scripts.</li>
-  <li>Plan at most <b>5</b> on-screen phrases per script and render them as PNG slides.</li>
+  <li>Plan at most <b>5</b> excerpts per script. <b>Ollama rewrites each excerpt into one sentence</b> (even when narration stubbing is on). That sentence is drawn on the PNG. The original excerpt is kept as <code>SourcePhrase</code>.</li>
   <li>Synthesize <code>audio-01.mp3</code> … <code>audio-08.mp3</code> via ElevenLabs (if an API key is configured) or Windows SAPI + ffmpeg.</li>
   <li>Sync each MP3 with that segment’s slides into <code>video-01.mp4</code> … <code>video-08.mp4</code>.</li>
   <li>Merge into <code>video_yyyyMMdd_HHmmss.mp4</code> in the output folder.</li>
@@ -271,7 +273,7 @@
 <h2>1.2 Main use cases</h2>
 <table>
   <tr><th>Use case</th><th>How it is invoked</th><th>What happens</th></tr>
-  <tr><td>Produce a video from the repo transcript (current default)</td><td><code>dotnet run --project src\NarrationStudio -- --orchestration direct</code> from the repo root</td><td>Clears previous output, copies stub narration, segments, slides, TTS, compose, merge.</td></tr>
+  <tr><td>Produce a video from the repo transcript (typical)</td><td><code>dotnet run --project src\NarrationStudio -- --orchestration direct</code> from the repo root</td><td>Clears previous media, copies stub narration, segments, Ollama slide sentences, PNGs, TTS, compose, merge. Writes timestamped memory snapshots. Requires local Ollama for slides.</td></tr>
   <tr><td>Agent-orchestrated production</td><td>Omit <code>--orchestration</code> (defaults to <code>handoff</code>) or pass <code>sequential</code></td><td>Builds MAF agents against Ollama/OpenAI/Azure; specialists call the same tools. If the merged file is missing afterward, DirectPipelineRunner finishes the job.</td></tr>
   <tr><td>Use a different transcript file</td><td>Pass a path as the first non-flag argument, or set <code>Studio:TranscriptPath</code></td><td><code>ProductionApp.ResolveTranscriptPath</code> walks a candidate list until a file exists.</td></tr>
   <tr><td>Call Ollama for the rewrite instead of the stub</td><td>Set <code>Studio:UseStubNarration</code> to <code>false</code></td><td><code>NarrationRewriteService.RephraseAsync</code> posts the raw transcript to Ollama.</td></tr>
@@ -292,7 +294,7 @@
     <div class="arrow">▼</div>
     <div class="box"><b>Tools</b> — ProductionTools: the only public production API (methods, not HTTP)</div>
     <div class="arrow">▼</div>
-    <div class="box"><b>Services</b> — rewrite, segment, plan, render, TTS, ffmpeg compose/merge, PipelineStore</div>
+    <div class="box"><b>Services</b> — narration rewrite, segment, slide plan, Ollama slide sentences, PNG render, TTS, ffmpeg, PipelineStore</div>
     <div class="arrow">▼</div>
     <div class="box"><b>Externals</b> — filesystem, Ollama HTTP, ElevenLabs HTTP, ffmpeg/ffprobe, Windows SAPI</div>
   </div>
@@ -304,9 +306,10 @@
 <p>Control flow for a typical current run (<code>UseStubNarration=true</code>, <code>--orchestration direct</code>):</p>
 <ol>
   <li><code>Program.cs</code> builds the host and calls <code>ProductionApp.RunAsync(args)</code>.</li>
-  <li>Mutex acquired. Transcript and output directory resolved. <code>PipelineStore.Initialize</code> deletes previous generated files.</li>
+  <li>Mutex acquired. Transcript and output directory resolved. <code>PipelineStore.Initialize</code> deletes previous <b>media</b> (scripts/slides/audio/video and <code>video_*.mp4</code>) but <b>keeps</b> prior <code>output/agent-file-memory/production-notes-*</code> folders. It creates a new timestamped memory folder and writes <code>run.txt</code>.</li>
+  <li>Banner includes TTS provider and <code>Memory : {full path}</code>.</li>
   <li>Because stubbing is on, <code>RephraseTranscriptIntoNarration</code> copies the stub file into <code>narration-rewritten.txt</code> and sets <code>NarrationPath</code>.</li>
-  <li>Direct mode always re-segments, re-plans, re-renders, re-synthesizes, re-composes, and merges.</li>
+  <li>Direct mode always re-segments, plans slides, calls Ollama for one sentence per slide, re-renders PNGs, re-synthesizes, re-composes, and merges. Each <code>Mutate</code> refreshes <code>pipeline-status.txt</code> and <code>notes.txt</code> in the memory folder.</li>
   <li>Console prints <code>Done: {merged path}</code>.</li>
 </ol>
 <p>Status strings written onto state: <code>created</code> → <code>narration-ready</code> → <code>scripts-ready</code> → <code>slides-planned</code> → <code>slides-rendered</code> → <code>audio-ready</code> → <code>videos-ready</code> → <code>complete</code>.</p>
@@ -320,7 +323,7 @@
   <tr><td>Frontend</td><td>Console stdout/stderr. No UI framework, routing, or components.</td><td><code>ProductionApp</code>, <code>WorkflowHost.RunAsync</code>, <code>DirectPipelineRunner</code></td></tr>
   <tr><td>Backend</td><td>The same process. Business logic is C# services invoked in-process.</td><td><code>src/NarrationStudio/Services</code>, <code>Tools</code>, <code>Orchestration</code></td></tr>
   <tr><td>Database</td><td>None. Persistence is JSON + files under <code>output/</code>.</td><td><code>PipelineStore</code>, <code>Models/PipelineModels.cs</code></td></tr>
-  <tr><td>HTTP API (this app)</td><td>None served. The process is a client of Ollama and ElevenLabs.</td><td><code>NarrationRewriteService</code>, <code>TtsService</code></td></tr>
+  <tr><td>HTTP API (this app)</td><td>None served. The process is a client of Ollama (narration if unstubbed; always slide sentences) and ElevenLabs.</td><td><code>NarrationRewriteService</code>, <code>SlidePhraseRewriteService</code>, <code>TtsService</code></td></tr>
   <tr><td>Internal API</td><td><code>ProductionTools</code> methods exposed to agents via <code>AIFunctionFactory.Create</code></td><td><code>Tools/ProductionTools.cs</code></td></tr>
   <tr><td>External processes</td><td><code>ffmpeg</code>, <code>ffprobe</code> on PATH</td><td><code>FfmpegProcess</code> in <code>TtsService.cs</code></td></tr>
 </table>
@@ -331,7 +334,7 @@
   <tr><td>Program.cs</td><td>Configuration providers, DI, start <code>ProductionApp</code></td><td>Contain pipeline logic</td></tr>
   <tr><td>ProductionApp</td><td>Single-run policy, path/mode resolution, stub rewrite before agents, failover to direct</td><td>Segment text or call ffmpeg</td></tr>
   <tr><td>WorkflowHost / AgentFactory</td><td>Build MAF agents and workflows; stream agent text to the console</td><td>Write media files themselves</td></tr>
-  <tr><td>DirectPipelineRunner</td><td>Deterministic ordered tool calls; overwrite-oriented regeneration</td><td>Talk to LLMs</td></tr>
+  <tr><td>DirectPipelineRunner</td><td>Deterministic ordered tool calls; overwrite-oriented regeneration</td><td>Choose agent graph (it <i>does</i> call Ollama via slide-phrase tools)</td></tr>
   <tr><td>ProductionTools</td><td>Validate preconditions, call services, mutate PipelineStore, return short status strings</td><td>Know ffmpeg flags</td></tr>
   <tr><td>Domain services</td><td>Pure-ish transforms and I/O (rewrite, split, PNG, TTS, video)</td><td>Choose orchestration mode</td></tr>
   <tr><td>PipelineStore</td><td>Thread-safe state, filenames, wipe-on-start, persist JSON, agent status summary</td><td>Call external APIs</td></tr>
@@ -351,7 +354,7 @@
 <h2>2.4 Why this shape</h2>
 <ul>
   <li><b>Tools as the real pipeline.</b> Agents are optional drivers. Direct mode exists so production still works when the LLM is slow, missing, or poorly follows handoff instructions. Confirmed in <code>ProductionApp</code>: agent failure to produce a merged file always falls through to <code>DirectPipelineRunner</code>.</li>
-  <li><b>Wipe outputs on start.</b> Earlier versions skipped existing PNGs/MP3s/MP4s, so a new narration could be muxed with old media. <code>Initialize</code> now deletes generated trees.</li>
+  <li><b>Wipe media on start; keep memory folders.</b> Scripts, slides, audio, video, and leftover <code>video_*.mp4</code> are deleted so a rerun cannot stitch old media. Agent memory is <b>not</b> deleted: each run uses <code>output/agent-file-memory/production-notes-{RunId}/</code>.</li>
   <li><b>Stub rewrite.</b> Local Ollama rewrite is long-running (timeout 30 minutes). Stubbing lets the rest of the factory be developed against a known talk.</li>
   <li><b>Windows TFM.</b> <code>net10.0-windows</code> is required for <code>System.Speech</code>.</li>
 </ul>
@@ -367,7 +370,7 @@
 
 <h2>3.2 ProductionApp</h2>
 <p><b>File:</b> <code>src/NarrationStudio/ProductionApp.cs</code></p>
-<p><b>Responsibilities.</b> Exclusive run (mutex), resolve transcript/output/orchestration, initialize store (which wipes artifacts), print a banner (including TTS provider), optionally apply stub rewrite <b>before</b> agents exist, choose direct vs agent workflow, failover to direct if merge is missing, print Done.</p>
+<p><b>Responsibilities.</b> Exclusive run (mutex), resolve transcript/output/orchestration, initialize store (wipes media, creates timestamped memory folder), print a banner (TTS provider and <code>Memory</code> path), write <code>run.txt</code>, optionally apply stub rewrite <b>before</b> agents exist, choose direct vs agent workflow, failover to direct if merge is missing, print Done.</p>
 <p><b>Important methods.</b></p>
 <table>
   <tr><th>Method</th><th>Behavior</th></tr>
@@ -383,13 +386,14 @@
 <p><b>Files:</b> <code>Services/PipelineStore.cs</code>, <code>Models/PipelineModels.cs</code></p>
 <p><b>Purpose.</b> Single source of pipeline truth for one process run. Analogous to a unit-of-work + repository, but for files.</p>
 <p><b>Internal structure.</b> Private <code>PipelineState _state</code> plus <code>object _gate</code>. <code>Snapshot()</code> serializes then deserializes with source-generated <code>PipelineJsonContext</code> so callers cannot mutate live state without <code>Mutate</code>. Every <code>Mutate</code> writes <code>output/pipeline-state.json</code>.</p>
-<p><b>Initialize.</b> Sets transcript and output paths, creates directories, <b>deletes</b> previous scripts/slides/audio/video, <code>agent-file-memory</code>, leftover <code>video_*.mp4</code>, and old state JSON, then persists a fresh state. Returns the count of deleted files for the banner.</p>
+<p><b>Initialize.</b> Sets transcript and output paths, creates directories, <b>deletes</b> previous scripts/slides/audio/video, leftover <code>video_*.mp4</code>, and old <code>pipeline-state.json</code>. It does <b>not</b> delete <code>agent-file-memory</code>. It creates <code>AgentMemoryDirectory</code> = <code>output/agent-file-memory/production-notes-{RunId}</code> and writes snapshots there on every persist. Returns the count of deleted media files for the banner.</p>
 <p><b>Naming helpers (confirmed).</b></p>
 <pre>audio-{nn}.mp3
 video-{nn}.mp4
 segment-{nn}-slide-{nn}.png
 narration-rewritten.txt
-video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
+video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction
+production-notes-{RunId}\   under output\agent-file-memory\</pre>
 <p><b>State fields.</b> See §5. <code>RunId</code> is assigned in the constructor <b>before</b> Initialize; wiping old merged videos uses glob <code>video_*.mp4</code>, not the new RunId.</p>
 <p><b>SummarizeForAgent.</b> Counts scripts/slides/images/audio/videos from in-memory segments plus File.Exists. “Next required step” is a priority chain. After wipe, in-memory segments are empty even if a human dropped files on disk mid-run — agents are steered by this summary, not by scanning leftover files (except existence checks on paths already recorded in state).</p>
 <p><b>Concurrency.</b> Lock around snapshot/mutate/initialize. Tool methods sometimes snapshot, work, then mutate — a second thread could interleave, but the app is effectively single-threaded aside from ffmpeg async reads.</p>
@@ -407,14 +411,14 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
   <tr><td><code>RephraseTranscriptIntoNarration</code></td><td>raw transcript via LoadTranscript; rewrite service may ignore it when stubbing</td><td><code>scripts/narration-rewritten.txt</code></td><td>narration-ready</td><td>stub missing/short; Ollama empty</td></tr>
   <tr><td><code>SegmentTranscriptIntoEightScripts</code></td><td>rewritten text</td><td><code>narration-01..08.txt</code>, <code>narration-all.txt</code></td><td>scripts-ready</td><td>count ≠ SegmentCount</td></tr>
   <tr><td><code>SaveNarrationScripts</code></td><td>JSON array of segments</td><td>same script files</td><td>scripts-ready</td><td>parse fail; wrong count</td></tr>
-  <tr><td><code>PlanSlidesForAllSegments</code></td><td>each segment.Script</td><td>in-state SlideSpec lists</td><td>slides-planned</td><td>scripts missing</td></tr>
-  <tr><td><code>RenderAllSlideImages</code></td><td>slide phrases</td><td>PNGs; always overwrite</td><td>slides-rendered</td><td>scripts missing</td></tr>
+  <tr><td><code>PlanSlidesForAllSegments</code></td><td>each segment.Script</td><td>SlideSpec lists; Ollama one-sentence <code>Phrase</code></td><td>slides-planned</td><td>scripts missing; Ollama fail</td></tr>
+  <tr><td><code>RenderAllSlideImages</code></td><td>slide <code>Phrase</code> (Ollama sentence)</td><td>PNGs; always overwrite</td><td>slides-rendered</td><td>scripts missing</td></tr>
   <tr><td><code>SynthesizeAllAudioAsync</code></td><td>each script</td><td>MP3s; duration probed</td><td>audio-ready</td><td>scripts missing; TTS/ffmpeg fail</td></tr>
   <tr><td><code>ComposeAllSegmentVideos</code></td><td>audio + images</td><td>segment MP4s</td><td>videos-ready</td><td>audio/slides missing</td></tr>
   <tr><td><code>MergeAllVideos</code></td><td>8 video paths</td><td>merged MP4</td><td>complete</td><td>count ≠ SegmentCount</td></tr>
 </table>
 <p><b>EnsureScripts.</b> Requires <code>Segments.Count == SegmentCount</code> in memory — not a directory listing. After a wipe, agents that skip segmentation cannot render.</p>
-<p><b>Cancellation.</b> <code>Rephrase</code> and TTS pass <code>CancellationToken.None</code> today. Host stop (<code>ApplicationStopping</code>) is only wired into <code>WorkflowHost.RunAsync</code>, not into ffmpeg/TTS. Confirmed limitation.</p>
+<p><b>Cancellation.</b> Rephrase, slide-sentence rewrite, and TTS pass <code>CancellationToken.None</code> today. Host stop (<code>ApplicationStopping</code>) is only wired into <code>WorkflowHost.RunAsync</code>, not into Ollama/ffmpeg/TTS. Confirmed limitation.</p>
 
 <h2>3.5 NarrationRewriteService and OllamaChatClientFactory</h2>
 <p><b>File:</b> <code>Services/NarrationRewriteService.cs</code> (both types)</p>
@@ -422,7 +426,7 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
 <p><b>RephraseAsync.</b></p>
 <ul>
   <li>If <code>UseStubNarration</code>: resolve stub path (transcript dir, cwd, BaseDirectory, and a walk-up from bin). Strip <code>&lt;think&gt;</code> and fences. Reject if length &lt; 400 characters. Does not send the raw transcript to a model.</li>
-  <li>Else: system prompt asks for ~<code>TargetTalkMinutes * 140</code> words, spoken voice, no invented facts. User message is the raw transcript. Temperature 0.35. Same length check on the result.</li>
+  <li>Else: system prompt asks for ~<code>TargetTalkMinutes * 140</code> words, spoken voice, no invented facts. User message is the raw transcript. Temperature 0.35. Same length check on the result. Logs elapsed seconds: <code>Received rewritten narration (N words) in Xs.</code></li>
 </ul>
 <p><b>Why 400 characters.</b> Heuristic to catch empty or “thinking only” model output. Not a linguistic quality gate.</p>
 
@@ -431,9 +435,11 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
 <p><b>WriteScriptFiles</b> overwrites <code>narration-{nn}.txt</code> and concatenates <code>narration-all.txt</code>.</p>
 <p><b>Edge case (confirmed).</b> If every remaining group has a single sentence and count is still below 8, the loop can <code>break</code> after duplicating one sentence into a new group, then <code>Take(buckets)</code> may still return fewer than 8. <code>SegmentTranscriptIntoEightScripts</code> would then throw. Unlikely for a 7-minute talk; possible for a tiny stub.</p>
 
-<h2>3.7 SlidePlannerService</h2>
-<p>Clamps max slides to 1..5. Sentence-splits the script; if more sentences than max, concatenates chunks. Phrases truncated to 220 characters with ellipsis. Returns <code>List&lt;SlideSpec&gt;</code> with numbers and phrases; <code>ImagePath</code> filled later by render.</p>
-<p>This is deterministic NLP-by-regex, not an LLM. The <code>slide_planner</code> agent is instructed to call this tool rather than invent phrases, though a misbehaving model could still skip the tool (handoff risk). Direct mode always calls the tool.</p>
+<h2>3.7 SlidePlannerService and SlidePhraseRewriteService</h2>
+<p><b>SlidePlannerService</b> clamps max slides to 1..5. Sentence-splits the script; if more sentences than max, concatenates chunks. Each item gets <code>SourcePhrase</code> and an initial <code>Phrase</code> (trimmed to 220 characters). <code>ImagePath</code> is filled later by render. This split is deterministic regex, not an LLM.</p>
+<p><b>SlidePhraseRewriteService</b> (<code>Services/SlidePhraseRewriteService.cs</code>) then calls local Ollama for every slide that is not yet <code>PhraseRewritten</code>. The model must return exactly one short sentence (about 8–22 words). Thinking tags and fences are stripped via <code>NarrationRewriteService.StripModelExtras</code>. Temperature 0.2. The sentence is stored in <code>Phrase</code>; the PNG renderer draws <code>Phrase</code> only. Empty Ollama output falls back to the source excerpt with a warning.</p>
+<p>Each slide logs <code>Rephrased slide NN-MM in Xs: …</code>. After the batch: <code>Rephrased N slide sentence(s) in Xs.</code> <code>UseStubNarration</code> does <b>not</b> skip this step — Ollama must be running whenever slides are planned or rendered. Direct mode therefore talks to Ollama even with a stubbed 7-minute talk.</p>
+<p><code>PlanSlidesForAllSegments</code> and <code>RenderAllSlideImages</code> are both async and both call <code>RewriteAllAsync</code>. Render skips slides already marked rewritten so the same excerpt is not billed twice in one run.</p>
 
 <h2>3.8 SlideImageRenderer</h2>
 <p>ImageSharp PNG, 1920×1080 by default. Dark navy canvas, gold rule, header “SEGMENT nn · SLIDE x/y”, wrapped body text, footer = segment title. Fonts tried: Segoe UI, Arial, Calibri, else first system family.</p>
@@ -451,13 +457,14 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
 <p>Path escaping for concat files: backslash → slash, single quote → ffmpeg concat escape.</p>
 
 <h2>3.11 DirectPipelineRunner</h2>
-<p>Logs, prints status, rephrases only if <code>NarrationPath</code> is empty/missing (so ProductionApp’s stub is not duplicated unless something deleted the file), then <b>always</b> segments, plans, renders, synthesizes, composes, merges. No skip-if-exists on media. Return value is the merge tool’s string; ProductionApp also reads <code>MergedVideoPath</code> from state.</p>
+<p>Logs, prints status, rephrases only if <code>NarrationPath</code> is empty/missing (so ProductionApp’s stub is not duplicated unless something deleted the file), then <b>always</b> segments, plans (including Ollama one-sentence rewrite), renders, synthesizes, composes, merges. No skip-if-exists on media. Return value is the merge tool’s string; ProductionApp also reads <code>MergedVideoPath</code> from state.</p>
 
 <h2>3.12 AgentFactory and ProductionCrew</h2>
 <p><b>ProductionCrew</b> is a record of seven <code>AIAgent</code> instances.</p>
 <p><b>TryCreate.</b> Builds one <code>IChatClient</code>: Azure OpenAI if endpoint set (key or DefaultAzureCredential), else OpenAI if <code>OPENAI_API_KEY</code>, else Ollama. Failure returns false → ProductionApp uses direct mode.</p>
 <p>Each agent: <code>chatClient.AsAIAgent(ChatClientAgentOptions)</code> with id/name/description, instructions, tools, and two context providers. Then <code>.AsBuilder().Use(guardrails.RunAsync).Use(guardrails.FunctionAsync).Build()</code>.</p>
-<p>File memory: MAF <code>FileMemoryProvider</code> + <code>FileSystemAgentFileStore</code> under <code>output/agent-file-memory</code>, working folder <code>production-notes</code>. <b>Inferred:</b> the package persists agent notes as files; this repo does not reimplement that store. Initialize deletes that directory each run, so memory does not survive reruns.</p>
+<p>File memory: MAF <code>FileMemoryProvider</code> + <code>FileSystemAgentFileStore</code> under <code>output/agent-file-memory</code>, working folder <code>production-notes-{RunId}</code>. That provider is constructed only inside <code>TryCreate</code>, so <b>direct mode never starts it</b>. <b>Inferred:</b> MAF may write extra files if agents use the file store during handoff/sequential.</p>
+<p>Independently, <code>PipelineStore</code> writes <code>run.txt</code>, <code>pipeline-status.txt</code>, and <code>notes.txt</code> into the same timestamped folder on every persist, including direct mode. Older <code>production-notes-*</code> folders are kept. See also <code>docs/memory-vs-mem0.pdf</code>.</p>
 <p><b>Chat client priority</b> is Azure → OpenAI → Ollama. A developer with Azure env vars set will <b>not</b> use local Ollama for specialists even if Ollama is running. Confirmed in <code>CreateChatClient</code>.</p>
 
 <h2>3.13 WorkflowHost</h2>
@@ -469,10 +476,10 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
 <h2>3.14 ProductionGuardrails</h2>
 <p>Inbound user messages containing blocked terms (<code>harmful</code>, <code>illegal</code>, <code>violence</code>, <code>exploit</code>, <code>malware</code>, <code>bypass paywall</code>) are replaced with a blocked marker; the run short-circuits with a refusal. All messages get email and <code>###-###-####</code> phone redaction.</p>
 <p><b>FunctionAsync</b> logs tool start/finish. It counts the word “slide” in string results of tools whose names contain “Slide” and logs a warning if count exceeds max slides × segments. <b>Confirmed: it does not trim or reject the result.</b> The 8-script cap is enforced in tools by throwing, not here.</p>
-<p>Guardrails apply only to agent runs, not DirectPipelineRunner.</p>
+<p>Guardrails apply only to agent runs, not DirectPipelineRunner. Fuller write-up: <code>docs/guardrails.pdf</code>.</p>
 
 <h2>3.15 ProductionContextProvider</h2>
-<p>On invoke, injects instructions: current summary, exact file naming, segment/slide caps, stay on task. After invoke, appends truncated assistant text to <code>PipelineState.Notes</code> (max 24, drop oldest). Notes are persisted in pipeline-state.json.</p>
+<p>On invoke, injects instructions: current summary, exact file naming, segment/slide caps, stay on task. After invoke, appends truncated assistant text to <code>PipelineState.Notes</code> (max 24, drop oldest). Notes are persisted in <code>pipeline-state.json</code> and copied to the timestamped memory <code>notes.txt</code>. They are <b>not</b> injected back into <code>ProvideAIContextAsync</code> (audit log, not retrieval).</p>
 
 <h2>3.16 Configuration types</h2>
 <p><code>StudioOptions</code> section <code>Studio</code>; <code>OllamaOptions</code> section <code>Model</code>. Defaults in the class match appsettings for segment counts, stubbing, voice id, video size. Options are captured at construction (<code>IOptions&lt;T&gt;.Value</code>), so <code>reloadOnChange</code> on JSON files does <b>not</b> update live option objects already injected. Confirmed: services store <code>_options = options.Value</code>.</p>
@@ -492,8 +499,10 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
       → Resolve voice_transcript.txt (repo root)
       → Resolve output/ (cwd-relative)
       → orchestration = "direct"
-      → PipelineStore.Initialize  (delete previous artifacts)
-      → Banner: Transcript, Output, Mode, Previous cleared N, Rewrite stub, TTS ElevenLabs|SAPI
+      → PipelineStore.Initialize  (delete previous media; keep old memory folders)
+      → create output\agent-file-memory\production-notes-{RunId}\
+      → Banner: Transcript, Output, Mode, Previous, Rewrite stub, TTS, Memory path
+      → WriteRunHeader → run.txt
       → UseStubNarration → ProductionTools.RephraseTranscriptIntoNarration
             → LoadTranscript (raw file, unused by stub rewrite)
             → NarrationRewriteService.RephraseAsync → read stub, strip think tags
@@ -502,7 +511,9 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
             → skip rephrase (NarrationPath exists)
             → SegmentTranscriptIntoEightScripts
             → PlanSlidesForAllSegments
-            → RenderAllSlideImages
+                  → regex split ≤5 excerpts
+                  → Ollama one sentence per excerpt (logs elapsed seconds)
+            → RenderAllSlideImages  (PNG uses Phrase, not SourcePhrase)
             → SynthesizeAllAudioAsync  (8 sequential ElevenLabs or SAPI calls)
             → ComposeAllSegmentVideos  (8 ffmpeg)
             → MergeAllVideos           (ffmpeg concat)
@@ -553,7 +564,7 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
   <tr><td><code>output/audio/*.mp3</code></td><td>TTS</td><td>Deleted at next run start</td></tr>
   <tr><td><code>output/video/*.mp4</code> and concat txt</td><td>Segment videos + ffmpeg lists</td><td>Deleted at next run start</td></tr>
   <tr><td><code>output/video_*.mp4</code></td><td>Merged masters</td><td>All matching files deleted at next run start</td></tr>
-  <tr><td><code>output/agent-file-memory/</code></td><td>MAF file memory</td><td>Cleared at next run start</td></tr>
+  <tr><td><code>output/agent-file-memory/production-notes-{RunId}/</code></td><td>run.txt, pipeline-status.txt, notes.txt; optional MAF files in handoff</td><td>New folder each run; prior folders kept</td></tr>
 </table>
 
 <h2>5.3 Relationships</h2>
@@ -564,7 +575,7 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
   <tr><th>Type</th><th>Fields</th></tr>
   <tr><td>PipelineState</td><td>runId, transcriptPath, narrationPath, outputDirectory, startedAt, status, segments[], mergedVideoPath, notes[]</td></tr>
   <tr><td>NarrationSegment</td><td>number, title, script, slides[], audioPath, videoPath, audioDurationSeconds</td></tr>
-  <tr><td>SlideSpec</td><td>number, phrase, imagePath</td></tr>
+  <tr><td>SlideSpec</td><td>number, sourcePhrase, phrase (Ollama one-sentence), phraseRewritten, imagePath</td></tr>
 </table>
 
 <h2>5.5 Queries and access</h2>
@@ -597,8 +608,8 @@ video_{RunId}.mp4   where RunId = yyyyMMdd_HHmmss at store construction</pre>
   <tr><td>RephraseTranscriptIntoNarration</td><td>async</td><td>none</td><td>“Saved N-word narration to {path}.”</td><td>FileNotFound / InvalidOperation / HTTP timeout</td></tr>
   <tr><td>SegmentTranscriptIntoEightScripts</td><td>sync</td><td>none</td><td>“Saved N narration scripts to {dir}.”</td><td>count mismatch; empty transcript</td></tr>
   <tr><td>SaveNarrationScripts</td><td>sync</td><td>segmentsJson</td><td>“Saved N agent-authored…”</td><td>JSON / count</td></tr>
-  <tr><td>PlanSlidesForAllSegments</td><td>sync</td><td>none</td><td>planned count + max</td><td>EnsureScripts</td></tr>
-  <tr><td>RenderAllSlideImages</td><td>sync</td><td>none</td><td>slides directory</td><td>EnsureScripts; IOException on PNG lock</td></tr>
+  <tr><td>PlanSlidesForAllSegments</td><td>async</td><td>none</td><td>planned count + Ollama sentence rewrite</td><td>EnsureScripts; Ollama</td></tr>
+  <tr><td>RenderAllSlideImages</td><td>async</td><td>none</td><td>slides directory</td><td>EnsureScripts; IOException on PNG lock; Ollama if not yet rewritten</td></tr>
   <tr><td>SynthesizeAllAudioAsync</td><td>async</td><td>none</td><td>audio directory</td><td>EnsureScripts; ElevenLabs HTTP; ffmpeg</td></tr>
   <tr><td>ComposeAllSegmentVideos</td><td>sync</td><td>none</td><td>video directory</td><td>missing audio/slides; ffmpeg</td></tr>
   <tr><td>MergeAllVideos</td><td>sync</td><td>none</td><td>“Merged video: {path}”</td><td>need 8 videos; ffmpeg</td></tr>
@@ -617,7 +628,7 @@ NarrationStudio.exe --orchestration=direct</pre>
 <p>There is no component hierarchy, router, form library, or rendering lifecycle in the SPA sense.</p>
 <h3>7.1 Console as UI</h3>
 <ul>
-  <li><b>Banner</b> in ProductionApp: transcript, output, mode, cleared file count, stub line, TTS provider.</li>
+  <li><b>Banner</b> in ProductionApp: transcript, output, mode, cleared file count, stub line, TTS provider, <b>Memory path</b>.</li>
   <li><b>Tool progress</b> in DirectPipelineRunner: each tool return string WriteLine.</li>
   <li><b>Agent stream</b> in WorkflowHost: executor id headers and incremental <code>update.Update.Text</code>.</li>
   <li><b>Host logging</b> Microsoft.Extensions.Logging to console (default Host logging).</li>
@@ -637,7 +648,8 @@ NarrationStudio.exe --orchestration=direct</pre>
   <tr><td>Exactly 8 scripts</td><td>TranscriptSegmenter + ProductionTools count check + SaveNarrationScripts</td></tr>
   <tr><td>Max 5 slides</td><td>SlidePlannerService clamp; RenderAllSlideImages Take(); options</td></tr>
   <tr><td>Never segment raw transcript after rewrite exists</td><td>LoadNarrationSource / SegmentTranscriptIntoEightScripts</td></tr>
-  <tr><td>Overwrite on rerun</td><td>PipelineStore.Initialize delete + tools always write</td></tr>
+  <tr><td>Slide on-screen text is one Ollama sentence</td><td>SlidePhraseRewriteService; PNG uses Phrase</td></tr>
+  <tr><td>Overwrite media on rerun; keep memory folders</td><td>PipelineStore.Initialize + tools always write</td></tr>
   <tr><td>Single instance</td><td>named Mutex</td></tr>
   <tr><td>Spoken talk length ~7 min</td><td>prompt only (Ollama); stub file is used as-is</td></tr>
 </table>
@@ -654,7 +666,7 @@ NarrationStudio.exe --orchestration=direct</pre>
 <h2>8.5 External integrations</h2>
 <table>
   <tr><th>System</th><th>Used for</th><th>Failure mode</th></tr>
-  <tr><td>Ollama</td><td>Rewrite (if not stub) and default agent LLM</td><td>Timeout 30 min; TryCreate may still succeed while later calls hang/fail</td></tr>
+  <tr><td>Ollama</td><td>Narration rewrite (if not stub); <b>every slide sentence</b>; default agent LLM</td><td>Timeout 30 min; slide rewrite is sequential per slide. Direct mode fails if Ollama is down during planning.</td></tr>
   <tr><td>OpenAI / Azure OpenAI</td><td>Optional agent LLM if keys/endpoint present</td><td>Takes priority over Ollama</td></tr>
   <tr><td>ElevenLabs</td><td>TTS</td><td>Hard fail, no fallback</td></tr>
   <tr><td>ffmpeg/ffprobe</td><td>MP3 encode, duration, slideshow, merge</td><td>Must be on PATH; 8 min timeout</td></tr>
@@ -741,7 +753,7 @@ NarrationStudio.exe --orchestration=direct</pre>
   <tr><td>SegmentCount</td><td>8</td><td>Scripts / MP3s / MP4s required</td></tr>
   <tr><td>MaxSlidesPerSegment</td><td>5</td><td>Planner clamp and render trim</td></tr>
   <tr><td>TargetTalkMinutes</td><td>7</td><td>Ollama word-budget; context instructions</td></tr>
-  <tr><td>UseStubNarration</td><td>true</td><td>Skip Ollama rewrite</td></tr>
+  <tr><td>UseStubNarration</td><td>true</td><td>Skip Ollama <i>narration</i> rewrite only. Slide sentences still call Ollama.</td></tr>
   <tr><td>StubNarrationPath</td><td>voice_transcript_ollama.txt</td><td>Relative stub file</td></tr>
   <tr><td>TranscriptPath</td><td>empty</td><td>Optional explicit transcript</td></tr>
   <tr><td>OutputDirectory</td><td>output</td><td>Relative to cwd unless rooted</td></tr>
@@ -766,7 +778,7 @@ NarrationStudio.exe --orchestration=direct</pre>
 </table>
 
 <h2>11.5 Feature flags</h2>
-<p>The only first-class flag is <code>UseStubNarration</code>. Orchestration mode is a CLI flag, not JSON. No staging/production splits exist in-repo.</p>
+<p>The only first-class JSON flag is <code>UseStubNarration</code> (narration rewrite only). Orchestration mode is a CLI flag. Slide-sentence Ollama has no off switch in config today. No staging/production splits exist in-repo.</p>
 
 <h1 id="s12">12. Deployment and Infrastructure</h1>
 <p><b>Confirmed:</b> this is a local developer executable, not a deployed service.</p>
@@ -782,31 +794,34 @@ NarrationStudio.exe --orchestration=direct</pre>
 <h1 id="s13">13. Performance and Scalability</h1>
 <table>
   <tr><th>Stage</th><th>Cost</th><th>Notes</th></tr>
-  <tr><td>Stub rewrite</td><td>Negligible</td><td>File copy + strip</td></tr>
-  <tr><td>Ollama rewrite</td><td>Minutes; up to 30 min timeout</td><td>Single request; temperature 0.35</td></tr>
-  <tr><td>Segment / plan</td><td>Milliseconds</td><td>Regex</td></tr>
-  <tr><td>PNG render</td><td>Seconds for ~40 images</td><td>Sequential CPU; ImageSharp</td></tr>
-  <tr><td>ElevenLabs TTS</td><td>Dominant when enabled</td><td>8 sequential HTTP calls, 3 min timeout each worst case</td></tr>
+  <tr><td>Stub narration rewrite</td><td>Negligible</td><td>File copy + strip</td></tr>
+  <tr><td>Ollama narration rewrite</td><td>Minutes; up to 30 min timeout</td><td>Only if UseStubNarration is false; logs elapsed seconds</td></tr>
+  <tr><td>Ollama slide sentences</td><td><b>Usually the longest stage</b></td><td>One sequential HTTP call per slide (up to 40). Observed tens to 160+ seconds each on local qwen3.8. Logs per-slide and total elapsed time.</td></tr>
+  <tr><td>Segment / regex plan</td><td>Milliseconds</td><td>Before Ollama sentences</td></tr>
+  <tr><td>PNG render</td><td>Seconds for ~40 images</td><td>Draws the Ollama sentence</td></tr>
+  <tr><td>ElevenLabs TTS</td><td>High when enabled</td><td>8 sequential HTTP calls, 3 min timeout each worst case</td></tr>
   <tr><td>ffmpeg compose</td><td>High CPU</td><td>8 sequential encodes 1920×1080</td></tr>
   <tr><td>ffmpeg merge copy</td><td>Fast</td><td>Re-encode fallback is slow</td></tr>
 </table>
 <p><b>Concurrency.</b> No parallel TTS or ffmpeg. Could be added but would contend on API rate limits and disk. Mutex forbids two pipelines.</p>
-<p><b>Scalability.</b> Designed for one talk, one machine, one run. Not multi-tenant. Bottleneck for “correct sounding” video is ElevenLabs quota/latency; bottleneck for local-only is SAPI + ffmpeg.</p>
+<p><b>Scalability.</b> Designed for one talk, one machine, one run. Not multi-tenant. Current bottleneck with stubbing on is <b>per-slide Ollama</b>; with ElevenLabs enabled, TTS is the other long tail.</p>
 <p><b>Caching.</b> Intentionally disabled for media so reruns match current narration.</p>
 
 <h1 id="s14">14. Testing</h1>
 <p><b>Confirmed: the repository contains no test project, no xUnit/NUnit/MSTest references, and no sample fixtures beyond the two transcript text files.</b></p>
 <p>What a new developer should still treat as the implicit test matrix (manual):</p>
 <ul>
+  <li>direct + stub + Ollama up → slide PNGs show one-sentence rewrites; memory folder has run.txt / pipeline-status.txt / notes.txt</li>
   <li>direct + stub + ElevenLabs → eight MP3s + merged mp4</li>
   <li>direct + stub + no API key → SAPI path</li>
   <li>UseStubNarration false with Ollama up → narration-rewritten.txt from model</li>
-  <li>handoff failover when merge missing</li>
+  <li>handoff: MAF FileMemoryProvider constructed; snapshots still written</li>
+  <li>rerun keeps old production-notes-* folders and deletes previous video_*.mp4</li>
   <li>second instance mutex</li>
   <li>rerun deletes previous video_*.mp4 and regenerates from stub</li>
   <li>locked output file → clear failure message</li>
 </ul>
-<p>Highest-value future unit tests: TranscriptSegmenter distribution count, SlidePlanner max-5, StripModelExtras, PipelineStore wipe, TtsService key resolution (without calling network).</p>
+<p>Highest-value future unit tests: TranscriptSegmenter distribution count, SlidePlanner max-5, FirstSentence/StripModelExtras, PipelineStore wipe vs memory keep, TtsService key resolution (without calling network).</p>
 
 <h1 id="s15">15. Developer Guide</h1>
 
@@ -817,10 +832,10 @@ NarrationStudio.exe --orchestration=direct</pre>
 <table>
   <tr><th>If you want to change…</th><th>Start here</th></tr>
   <tr><td>CLI, mutex, mode default</td><td>ProductionApp</td></tr>
-  <tr><td>File names / wipe policy</td><td>PipelineStore</td></tr>
+  <tr><td>Timestamped memory folder</td><td>PipelineStore.AgentMemoryDirectory</td></tr>
   <tr><td>Stub vs Ollama rewrite</td><td>NarrationRewriteService, StudioOptions</td></tr>
   <tr><td>How text is chopped into 8</td><td>TranscriptSegmenter</td></tr>
-  <tr><td>On-screen phrases</td><td>SlidePlannerService</td></tr>
+  <tr><td>On-screen slide sentences</td><td>SlidePhraseRewriteService (Ollama); planner only splits</td></tr>
   <tr><td>Slide look</td><td>SlideImageRenderer</td></tr>
   <tr><td>Voice / TTS vendor</td><td>TtsService, appsettings</td></tr>
   <tr><td>Video timing / codecs</td><td>VideoComposerService</td></tr>
@@ -841,7 +856,7 @@ NarrationStudio.exe --orchestration=direct</pre>
 <pre>cd E:\exercises\maf
 dotnet build
 dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
-<p>Edit transcripts at repo root. Inspect <code>output/scripts/narration-rewritten.txt</code> to verify stub/Ollama. Play the newest <code>output/video_*.mp4</code>.</p>
+<p>Edit transcripts at repo root. Inspect <code>output/scripts/narration-rewritten.txt</code> to verify stub/Ollama. Inspect <code>output/agent-file-memory/production-notes-*</code> for <code>run.txt</code> and status. Play the newest <code>output/video_*.mp4</code>.</p>
 
 <h2>15.5 Pitfalls and technical debt</h2>
 <ul>
@@ -849,7 +864,9 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
   <li>Secrets in tracked JSON.</li>
   <li>Agent prompts still mention “8” and audio-01..08 even if SegmentCount changes.</li>
   <li>Guardrail slide counter does not enforce.</li>
-  <li>CancellationToken.None on TTS/rewrite.</li>
+  <li>Direct mode still requires Ollama because slide sentences are not stubbed.</li>
+  <li>Empty memory folder on an old direct run: FileMemoryProvider was never started; snapshots were added later — rebuild and rerun.</li>
+  <li>CancellationToken.None on TTS, narration rewrite, and slide rewrite.</li>
   <li>SummarizeForAgent next-step order prefers audio before remaining slide plans if scripts exist — odd if someone called TTS without planning (direct mode does not do that).</li>
   <li>No tests.</li>
   <li>Tone-bed fallback can produce a video that “works” with a beep instead of speech if SAPI fails and no ElevenLabs key.</li>
@@ -866,6 +883,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
         ├─ ProductionTools ──┬─ NarrationRewriteService ─ OllamaChatClientFactory
         │                    ├─ TranscriptSegmenter
         │                    ├─ SlidePlannerService
+        │                    ├─ SlidePhraseRewriteService ─ OllamaChatClientFactory
         │                    ├─ SlideImageRenderer
         │                    ├─ TtsService ─ FfmpegProcess, NAudio, System.Speech, HttpClient
         │                    └─ VideoComposerService ─ FfmpegProcess
@@ -887,7 +905,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
   <tr><td>Microsoft.Extensions.AI.OpenAI 10.6.0</td><td>AsIChatClient extensions</td><td>AgentFactory</td></tr>
   <tr><td>Azure.AI.OpenAI 2.1.0 / Azure.Identity 1.14.2</td><td>Azure client + DefaultAzureCredential</td><td>AgentFactory</td></tr>
   <tr><td>OpenAI (transitive via packages)</td><td>OpenAIClient</td><td>AgentFactory</td></tr>
-  <tr><td>OllamaSharp 5.4.25</td><td>OllamaApiClient</td><td>OllamaChatClientFactory</td></tr>
+  <tr><td>OllamaSharp 5.4.25</td><td>OllamaApiClient</td><td>OllamaChatClientFactory, used by narration rewrite and slide sentences</td></tr>
   <tr><td>SixLabors.ImageSharp 3.1.11 + Drawing + Fonts</td><td>PNG slides</td><td>SlideImageRenderer</td></tr>
   <tr><td>NAudio 2.2.1</td><td>Tone-bed fallback WAV</td><td>TtsService.GenerateToneBed</td></tr>
   <tr><td>System.Speech 9.0.8</td><td>Windows TTS</td><td>TtsService</td></tr>
@@ -913,7 +931,8 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
      OpenAI / Azure (optional)
              │
              ▼
-        output/  (JSON + PNG + MP3 + MP4)</pre>
+        output/  (JSON + PNG + MP3 + MP4
+                 + agent-file-memory/production-notes-{RunId}/)</pre>
   <div class="cap">Figure 2. Process and externals. Confirmed.</div>
 </div>
 
@@ -931,7 +950,13 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
         ▼
  narration-01.txt … 08.txt
         │
-        ├──────────────►  slide phrases  ►  segment-NN-slide-MM.png
+        ├──────────────►  SourcePhrase (regex excerpt)
+        │                      │
+        │                      ▼
+        │                 Ollama one sentence → Phrase
+        │                      │
+        │                      ▼
+        │                 segment-NN-slide-MM.png
         │
         ▼
  audio-01.mp3 … 08.mp3   (ElevenLabs or SAPI)
@@ -941,12 +966,15 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
         │
         ▼
  video_yyyyMMdd_HHmmss.mp4
- + pipeline-state.json</pre>
+ + pipeline-state.json
+ + agent-file-memory/production-notes-{RunId}/run.txt
+                                        pipeline-status.txt
+                                        notes.txt</pre>
   <div class="cap">Figure 3. Artifact lineage. Later stages must not read the raw transcript once narration-rewritten.txt exists.</div>
 </div>
 
 <h2>17.4 Direct-mode lifecycle</h2>
-<p>See §4.1. Sequence is strictly linear; each tool Mutate persists JSON before the next tool starts (except render which mutates once after all PNGs).</p>
+<p>See §4.1. Sequence is strictly linear. Plan and render are async (Ollama). Each tool Mutate persists JSON and refreshes the timestamped memory snapshots. Render skips Ollama when <code>PhraseRewritten</code> is already true.</p>
 
 <h2>17.5 Handoff lifecycle</h2>
 <div class="fig">
@@ -955,7 +983,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
         ├─[stub off]→ narration_rewriter → Rephrase… → script_segmenter
         └─[stub on]→ script_segmenter → LoadNarrationSource + Segment…
              → coordinator
-             → slide_planner → PlanSlides… → image_renderer
+             → slide_planner → PlanSlides… (Ollama one sentence per slide) → image_renderer
              → coordinator
              → tts_producer → SynthesizeAllAudioAsync
              → coordinator
@@ -971,6 +999,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
    runId PK (string, time-based)
    1 ──&lt; NarrationSegment.number  (1..SegmentCount)
               1 ──&lt; SlideSpec.number (1..≤5)
+                    sourcePhrase, phrase, phraseRewritten
    notes[]  (capped 24)</pre>
   <div class="cap">Figure 5. In-memory / JSON relationship. No RDBMS.</div>
 </div>
@@ -999,7 +1028,8 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
   <tr><td>MAF</td><td>Microsoft Agent Framework (NuGet Microsoft.Agents.AI*)</td></tr>
   <tr><td>Direct mode</td><td>No agents; DirectPipelineRunner calls tools in order</td></tr>
   <tr><td>Handoff</td><td>Coordinator routes to specialist agents</td></tr>
-  <tr><td>Stub narration</td><td>Pre-written talk in voice_transcript_ollama.txt used instead of Ollama rewrite</td></tr>
+  <tr><td>Stub narration</td><td>Pre-written talk in voice_transcript_ollama.txt used instead of Ollama <i>narration</i> rewrite. Does not skip slide-sentence Ollama.</td></tr>
+  <tr><td>SourcePhrase / Phrase</td><td>Planner excerpt vs Ollama one-sentence drawn on the PNG</td></tr>
   <tr><td>RunId</td><td>Local timestamp used in merged filename</td></tr>
   <tr><td>ProductionTools</td><td>The in-process API agents and direct mode share</td></tr>
   <tr><td>Guardrails</td><td>Agent middleware for blocked terms and PII regex; not a full policy engine</td></tr>
@@ -1022,13 +1052,18 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
     Agents\WorkflowHost.cs
     Orchestration\DirectPipelineRunner.cs
     Tools\ProductionTools.cs
-    Services\*.cs
+    Services\SlidePhraseRewriteService.cs
     Models\PipelineModels.cs
     Configuration\*.cs
     Guardrails\ProductionGuardrails.cs
     Memory\ProductionContextProvider.cs
     Properties\launchSettings.json
-  docs\                             this document (HTML + PDF)</pre>
+  docs\
+    NarrationStudio-Internal-Workings.html / .pdf   this document
+    memory-vs-mem0.md / .pdf
+    guardrails.md / .pdf
+    harness-engineering.md / .pdf
+    agentic-system.md / .pdf</pre>
 
 <h2>18.3 Configuration reference</h2>
 <p>See §11. Do not copy secrets into documentation, tickets, or screenshots.</p>
@@ -1038,7 +1073,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
   <li>Operator is on Windows with .NET 10 SDK and ffmpeg on PATH.</li>
   <li>One talk at a time; output directory is expendable.</li>
   <li>Transcript language works with the chosen TTS model/voice.</li>
-  <li>Default run uses stub narration and (if configured) ElevenLabs.</li>
+  <li>Default run uses stub narration, still calls Ollama for slide sentences, and uses ElevenLabs if <code>Studio:ElevenLabsApiKey</code> (or env) is set.</li>
   <li>Repo root is the working directory so relative output/ and transcripts resolve.</li>
 </ul>
 
@@ -1049,6 +1084,7 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
   <li>Hardcoded “eight” in several prompts.</li>
   <li>Secrets currently live in appsettings.json.</li>
   <li>No max transcript size; ElevenLabs character limits can fail a segment.</li>
+  <li>Slide on-screen text depends on Ollama even when the 7-minute talk is stubbed; a down Ollama daemon fails planning.</li>
   <li>Slide timing is even split of audio duration, not word-level alignment.</li>
   <li>Guardrails do not apply to direct mode and do not enforce slide counts.</li>
 </ul>
@@ -1056,14 +1092,14 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
 <h2>18.6 Areas requiring further investigation</h2>
 <ul>
   <li>Exact MAF handoff / autonomous turn semantics on package 1.17.0 (only usage sites are in WorkflowHost).</li>
-  <li>FileMemoryProvider on-disk layout (deleted every run; low priority).</li>
+  <li>FileMemoryProvider on-disk layout during handoff (direct mode only writes Narration Studio snapshots).</li>
   <li>Whether Host user-secrets load without Development environment.</li>
   <li>ElevenLabs voice settings (stability/similarity) — currently only text + model_id.</li>
   <li>ffprobe duration locale parsing (uses current-culture TryParse, not InvariantCulture) — possible issue on some locales.</li>
 </ul>
 
 <footer class="doc-end">
-  End of document. Generated from the Narration Studio source tree as of 21 August 2026. If the code and this PDF diverge, the code wins.
+  End of document. Revision 2, generated from the Narration Studio source tree as of 21 August 2026. If the code and this PDF diverge, the code wins.
 </footer>
 
 </body>

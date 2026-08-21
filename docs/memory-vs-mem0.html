@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Narration Studio memory vs mem0</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #4a5160;
+    --accent: #0f1c2e;
+    --teal: #1b3a4b;
+    --gold: #c9a227;
+    --rule: #d7dde5;
+    --code: #f4f6f8;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: #fff;
+    font-family: "Segoe UI", Calibri, "Liberation Sans", sans-serif;
+    font-size: 10.8pt;
+    line-height: 1.48;
+  }
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left {
+      content: "Narration Studio  ·  Memory vs mem0";
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+  }
+  h1 {
+    font-size: 20pt;
+    color: var(--accent);
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 3mm;
+    margin: 0 0 6mm 0;
+  }
+  h2 {
+    font-size: 13.5pt;
+    color: var(--accent);
+    margin: 7mm 0 3mm 0;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px solid var(--rule);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 11.5pt;
+    color: var(--teal);
+    margin: 5mm 0 2mm 0;
+    page-break-after: avoid;
+  }
+  p { margin: 0 0 3.2mm 0; }
+  ul, ol { margin: 0 0 3.5mm 1.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  a { color: var(--teal); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 5mm 0;
+    font-size: 9.4pt;
+    page-break-inside: auto;
+  }
+  th, td {
+    border: 1px solid #cfd6de;
+    padding: 2.2mm 2.6mm;
+    vertical-align: top;
+    text-align: left;
+  }
+  th { background: #0f1c2e; color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #f7f9fb; }
+  code {
+    font-family: Consolas, "Cascadia Mono", "Courier New", monospace;
+    font-size: 9pt;
+    background: var(--code);
+    padding: 0 1.3mm;
+    border-radius: 2px;
+  }
+  pre {
+    background: #0f1c2e;
+    color: #e8eef3;
+    padding: 3.5mm 4mm;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.5pt;
+    line-height: 1.42;
+    white-space: pre-wrap;
+    word-break: break-word;
+    page-break-inside: avoid;
+    margin: 0 0 4.5mm 0;
+  }
+  .lede { color: var(--muted); }
+  .callout {
+    border-left: 4px solid var(--gold);
+    background: #eef4f8;
+    padding: 3mm 4mm;
+    margin: 0 0 5mm 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Narration Studio memory vs mem0</h1>
+<p class="lede">How Narration Studio uses “memory” for agent context, compared with <a href="https://docs.mem0.ai/core-concepts/how-it-works">mem0</a>.</p>
+<div class="callout"><b>Confirmed</b> means the behavior is in this repository’s source. <b>Inferred</b> means it comes from Microsoft Agent Framework (MAF) or from mem0’s published design.</div>
+
+<h2>Does the app remember conversation context?</h2>
+<p>Yes — but only in <b>agent modes</b> (<code>handoff</code> / <code>sequential</code>), and it is <b>not</b> conversational memory like mem0. Direct mode does not use it.</p>
+<p>What the app actually remembers is <b>pipeline state</b> (which files exist, what step is next), plus two MAF context providers that inject that state into agent prompts. It does <b>not</b> extract facts, embed them, or retrieve relevant memories by similarity.</p>
+
+<h2>How this app uses memory</h2>
+<p>Two providers are attached to every specialist in <code>AgentFactory</code>:</p>
+<pre>var memoryRoot = Path.Combine(_store.OutputDirectory, "agent-file-memory");
+var fileMemory = new FileMemoryProvider(
+    new FileSystemAgentFileStore(memoryRoot),
+    _ => new FileMemoryState { WorkingFolder = "production-notes" });
+
+IList&lt;AIContextProvider&gt; providers = [_context, fileMemory];</pre>
+<p>Source: <code>src/NarrationStudio/Agents/AgentFactory.cs</code>.</p>
+
+<h3>1. ProductionContextProvider (this repo)</h3>
+<p>File: <code>src/NarrationStudio/Memory/ProductionContextProvider.cs</code>.</p>
+<p><b>Read (before an agent call):</b> <code>ProvideAIContextAsync</code> injects a live status block into the agent instructions — transcript path, rewritten narration, script/slide/audio/video counts, next step, and naming rules. The status text comes from <code>PipelineStore.SummarizeForAgent()</code>.</p>
+<p><b>Write (after an agent call):</b> <code>StoreAIContextAsync</code> takes the assistant’s reply, truncates it to 240 characters, and appends it to <code>PipelineState.Notes</code> (max 24 entries). Tools also append notes such as “Created 8 narration scripts…”.</p>
+<p>Those notes are saved in <code>output/pipeline-state.json</code>. They are <b>not</b> fed back into <code>ProvideAIContextAsync</code> or <code>SummarizeForAgent()</code>. So they are an audit log, not a retrieval loop.</p>
+
+<h3>2. FileMemoryProvider (Microsoft Agent Framework)</h3>
+<p>MAF’s file store under <code>output/agent-file-memory/production-notes</code>. <b>Inferred:</b> it persists agent working notes as files and can re-inject them on later turns in the same process.</p>
+<p>Each run <b>deletes</b> that folder in <code>PipelineStore.Initialize</code>, so it does not survive a rerun.</p>
+
+<h3>3. What actually drives the pipeline</h3>
+<p><code>PipelineStore</code> is the real memory: structured <code>PipelineState</code> (segments, paths, status). Agents see it via <code>GetPipelineStatus</code> and the context provider. Direct mode uses only this; no chat history, no file memory.</p>
+<p>Within one <code>handoff</code> run, MAF also keeps the workflow’s message stream. That is short-term session context, not long-term memory. <b>Inferred</b> from <code>WorkflowHost.RunAsync</code>, not implemented in this repo.</p>
+
+<h2>How mem0 works</h2>
+<p>Mem0 is a <b>memory layer</b> between the app and the model:</p>
+<ol>
+  <li>After a useful interaction, call <code>add</code> to store what should be remembered.</li>
+  <li>Before the next model call, call <code>search</code> and put the best hits into the prompt.</li>
+</ol>
+<p>Internally, <code>add</code> extracts durable facts with an LLM, deduplicates, embeds them, and stores entities. <code>search</code> ranks memories against the query (vector similarity, keyword matching, entity overlap), scoped by identifiers such as <code>user_id</code>, <code>agent_id</code>, or <code>run_id</code>.</p>
+<p>Storage is typically:</p>
+<table>
+  <tr><th>Store</th><th>Holds</th></tr>
+  <tr><td>SQL database</td><td>Facts, metadata, history</td></tr>
+  <tr><td>Vector database</td><td>Embeddings for semantic search</td></tr>
+  <tr><td>Entity / graph store</td><td>People, places, concepts and links</td></tr>
+</table>
+<p>Typical loop: search memories → put hits in the system prompt → model answers → <code>add</code> the turn.</p>
+
+<h2>Comparison</h2>
+<table>
+  <tr><th></th><th>Narration Studio</th><th>mem0</th></tr>
+  <tr><td>Purpose</td><td>Remind agents of <b>this run’s factory status</b></td><td>Remember <b>people, preferences, facts</b> across chats</td></tr>
+  <tr><td>What is stored</td><td>File paths, counts, status, truncated replies</td><td>Distilled facts + embeddings + entities</td></tr>
+  <tr><td>How it is retrieved</td><td>Always inject the full status snapshot</td><td>Semantic <code>search(query, user_id)</code></td></tr>
+  <tr><td>Identity</td><td>None (one local process)</td><td><code>user_id</code>, <code>agent_id</code>, <code>run_id</code></td></tr>
+  <tr><td>Across sessions</td><td>Wiped on every run</td><td>Survives; that’s the point</td></tr>
+  <tr><td>Storage</td><td>JSON + files on disk</td><td>SQL + vector DB + entity/graph store</td></tr>
+  <tr><td>LLM used for memory</td><td>No (except the agent itself)</td><td>Yes, to extract/update facts</td></tr>
+  <tr><td>Direct mode</td><td>Unused</td><td>N/A</td></tr>
+</table>
+<p>This app’s loop is: snapshot <code>PipelineStore</code> → put the whole status in instructions → model calls tools → tools mutate <code>PipelineStore</code>.</p>
+<p>It uses MAF <b>context providers</b>, not a memory product. It remembers “scripts are 8/8, next is TTS,” not “Edwin prefers voice UPXQ…” from last week.</p>
+<p>To get mem0-style behavior you would add mem0 (or similar) beside MAF and call <code>search</code> / <code>add</code> around agent turns. Nothing in this repo does that today.</p>
+
+<h2>Key files</h2>
+<table>
+  <tr><th>File</th><th>Role</th></tr>
+  <tr><td><code>src/NarrationStudio/Memory/ProductionContextProvider.cs</code></td><td>Inject pipeline status; append truncated agent text to <code>Notes</code></td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Wires <code>ProductionContextProvider</code> + <code>FileMemoryProvider</code> onto every agent</td></tr>
+  <tr><td><code>src/NarrationStudio/Services/PipelineStore.cs</code></td><td>Structured run state; clears <code>agent-file-memory</code> on start</td></tr>
+  <tr><td><code>src/NarrationStudio/Models/PipelineModels.cs</code></td><td><code>PipelineState.Notes</code></td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/WorkflowHost.cs</code></td><td>In-process workflow message stream (short-term, inferred)</td></tr>
+  <tr><td><code>output/pipeline-state.json</code></td><td>Persisted state + notes (deleted on next run)</td></tr>
+  <tr><td><code>output/agent-file-memory/</code></td><td>MAF file memory (deleted on next run)</td></tr>
+</table>
+
+</body>
+</html>
