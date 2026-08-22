@@ -220,7 +220,7 @@
     <tr><td>Source of truth</td><td>C# source under <code>src/NarrationStudio</code>, <code>appsettings.json</code>, <code>README.md</code>, and observed runtime behavior.</td></tr>
     <tr><td>Out of scope</td><td>Microsoft Agent Framework library internals except as used here. ElevenLabs / Ollama / ffmpeg internals except as called.</td></tr>
     <tr><td>Secrets policy</td><td>This document names configuration keys but does not print secret values.</td></tr>
-    <tr><td>Companion notes</td><td><code>docs/memory-vs-mem0.pdf</code>, <code>docs/guardrails.pdf</code>, <code>docs/harness-engineering.pdf</code>, <code>docs/agentic-system.pdf</code></td></tr>
+    <tr><td>Companion notes</td><td><code>docs/memory-vs-mem0.pdf</code>, <code>docs/guardrails.pdf</code>, <code>docs/harness-engineering.pdf</code>, <code>docs/agentic-system.pdf</code>, <code>docs/orchestration-modes.pdf</code></td></tr>
   </table>
   <p><b>Revision 2</b> (21 August 2026) adds: Ollama one-sentence slide text; rephrase duration logs; timestamped agent-memory folders that are <i>not</i> wiped; <code>run.txt</code> / <code>pipeline-status.txt</code> / <code>notes.txt</code> snapshots in every mode including direct; ElevenLabs key from <code>Studio:ElevenLabsApiKey</code>.</p>
 
@@ -1063,7 +1063,8 @@ dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
     memory-vs-mem0.md / .pdf
     guardrails.md / .pdf
     harness-engineering.md / .pdf
-    agentic-system.md / .pdf</pre>
+    agentic-system.md / .pdf
+    orchestration-modes.md / .pdf</pre>
 
 <h2>18.3 Configuration reference</h2>
 <p>See §11. Do not copy secrets into documentation, tickets, or screenshots.</p>
