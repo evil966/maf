@@ -1,0 +1,295 @@
+{
+  "name": "Narration Studio form",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Narration Studio",
+        "formDescription": "Defaults match src/NarrationStudio/appsettings.json. Upload files here (n8n in Docker cannot browse Windows paths). API keys are not on this form — set them in Narration Studio API credentials.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Job title",
+              "fieldName": "title",
+              "fieldType": "text",
+              "placeholder": "Optional name stored in run.txt",
+              "hint": "Not in appsettings. Labels this production run."
+            },
+            {
+              "fieldLabel": "Transcript file",
+              "fieldName": "transcript",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".txt,.md",
+              "hint": "Studio:TranscriptPath. Host fallback is voice_transcript.txt at the repo root."
+            },
+            {
+              "fieldLabel": "Stub narration file",
+              "fieldName": "stubNarration",
+              "fieldType": "file",
+              "requiredField": true,
+              "acceptFileTypes": ".txt",
+              "hint": "Studio:StubNarrationPath. Host fallback is voice_transcript_ollama.txt when Use stub narration is true."
+            },
+            {
+              "fieldLabel": "Orchestration",
+              "fieldName": "orchestration",
+              "fieldType": "dropdown",
+              "requiredField": true,
+              "defaultValue": "direct",
+              "hint": "CLI default in appsettings is unused; n8n jobs default to direct.",
+              "fieldOptions": {
+                "values": [
+                  { "option": "direct" },
+                  { "option": "handoff" },
+                  { "option": "sequential" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Use stub narration",
+              "fieldName": "useStubNarration",
+              "fieldType": "dropdown",
+              "defaultValue": "true",
+              "hint": "Studio:UseStubNarration",
+              "fieldOptions": {
+                "values": [
+                  { "option": "true" },
+                  { "option": "false" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Use stub slide phrases",
+              "fieldName": "useStubSlidePhrases",
+              "fieldType": "dropdown",
+              "defaultValue": "false",
+              "hint": "Studio:UseStubSlidePhrases",
+              "fieldOptions": {
+                "values": [
+                  { "option": "false" },
+                  { "option": "true" }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Segment count",
+              "fieldName": "segmentCount",
+              "fieldType": "number",
+              "placeholder": "8",
+              "defaultValue": "8",
+              "hint": "Studio:SegmentCount"
+            },
+            {
+              "fieldLabel": "Max slides per segment",
+              "fieldName": "maxSlidesPerSegment",
+              "fieldType": "number",
+              "placeholder": "5",
+              "defaultValue": "5",
+              "hint": "Studio:MaxSlidesPerSegment"
+            },
+            {
+              "fieldLabel": "Target talk minutes",
+              "fieldName": "targetTalkMinutes",
+              "fieldType": "number",
+              "placeholder": "7",
+              "defaultValue": "7",
+              "hint": "Studio:TargetTalkMinutes"
+            },
+            {
+              "fieldLabel": "Ollama endpoint",
+              "fieldName": "endpoint",
+              "fieldType": "text",
+              "placeholder": "http://localhost:11434",
+              "defaultValue": "http://localhost:11434",
+              "hint": "Model:Endpoint (from the Windows host, not the n8n container)"
+            },
+            {
+              "fieldLabel": "Ollama model",
+              "fieldName": "model",
+              "fieldType": "text",
+              "placeholder": "qwen3.8:latest",
+              "defaultValue": "qwen3.8:latest",
+              "hint": "Model:Model"
+            },
+            {
+              "fieldLabel": "Ollama timeout minutes",
+              "fieldName": "timeoutMinutes",
+              "fieldType": "number",
+              "placeholder": "30",
+              "defaultValue": "30",
+              "hint": "Model:TimeoutMinutes"
+            },
+            {
+              "fieldLabel": "OpenAI model",
+              "fieldName": "openAIModel",
+              "fieldType": "text",
+              "placeholder": "gpt-4o-mini",
+              "defaultValue": "gpt-4o-mini",
+              "hint": "Studio:OpenAIModel"
+            },
+            {
+              "fieldLabel": "Azure OpenAI endpoint",
+              "fieldName": "azureOpenAIEndpoint",
+              "fieldType": "text",
+              "placeholder": "Leave empty to skip Azure",
+              "defaultValue": "",
+              "hint": "Studio:AzureOpenAIEndpoint"
+            },
+            {
+              "fieldLabel": "Azure OpenAI deployment",
+              "fieldName": "azureOpenAIDeployment",
+              "fieldType": "text",
+              "placeholder": "gpt-4o-mini",
+              "defaultValue": "gpt-4o-mini",
+              "hint": "Studio:AzureOpenAIDeployment"
+            },
+            {
+              "fieldLabel": "ElevenLabs voice ID",
+              "fieldName": "elevenLabsVoiceId",
+              "fieldType": "text",
+              "placeholder": "UPXQvvSDDubCtocmbltQ",
+              "defaultValue": "UPXQvvSDDubCtocmbltQ",
+              "hint": "Studio:ElevenLabsVoiceId. API key stays in n8n credentials."
+            },
+            {
+              "fieldLabel": "ElevenLabs model ID",
+              "fieldName": "elevenLabsModelId",
+              "fieldType": "text",
+              "placeholder": "eleven_multilingual_v2",
+              "defaultValue": "eleven_multilingual_v2",
+              "hint": "Studio:ElevenLabsModelId"
+            },
+            {
+              "fieldLabel": "Video width",
+              "fieldName": "videoWidth",
+              "fieldType": "number",
+              "placeholder": "1920",
+              "defaultValue": "1920",
+              "hint": "Studio:VideoWidth"
+            },
+            {
+              "fieldLabel": "Video height",
+              "fieldName": "videoHeight",
+              "fieldType": "number",
+              "placeholder": "1080",
+              "defaultValue": "1080",
+              "hint": "Studio:VideoHeight"
+            },
+            {
+              "fieldLabel": "Video frame rate",
+              "fieldName": "videoFrameRate",
+              "fieldType": "number",
+              "placeholder": "30",
+              "defaultValue": "30",
+              "hint": "Studio:VideoFrameRate"
+            },
+            {
+              "fieldLabel": "Rewrite extra instructions",
+              "fieldName": "rewriteExtraInstructions",
+              "fieldType": "textarea",
+              "placeholder": "Audience, product names, words to avoid",
+              "defaultValue": "",
+              "hint": "Appended to the Ollama narration prompt. Not in appsettings."
+            },
+            {
+              "fieldLabel": "Keep artifacts",
+              "fieldName": "keepArtifacts",
+              "fieldType": "dropdown",
+              "defaultValue": "true",
+              "hint": "Keep output/jobs/{id} after download. Not in appsettings.",
+              "fieldOptions": {
+                "values": [
+                  { "option": "true" },
+                  { "option": "false" }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "form-trigger",
+      "name": "On form submission",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [0, 0],
+      "webhookId": "narration-studio-form"
+    },
+    {
+      "parameters": {
+        "operation": "start",
+        "title": "={{ $json.title }}",
+        "orchestration": "={{ $json.orchestration || 'direct' }}",
+        "useStubNarration": "={{ $json.useStubNarration !== 'false' }}",
+        "useStubSlidePhrases": "={{ $json.useStubSlidePhrases === 'true' }}",
+        "transcriptBinary": "Transcript_file",
+        "stubNarrationBinary": "Stub_narration_file",
+        "segmentCount": "={{ Number($json.segmentCount) || 8 }}",
+        "maxSlidesPerSegment": "={{ Number($json.maxSlidesPerSegment) || 5 }}",
+        "targetTalkMinutes": "={{ Number($json.targetTalkMinutes) || 7 }}",
+        "endpoint": "={{ $json.endpoint || 'http://localhost:11434' }}",
+        "model": "={{ $json.model || 'qwen3.8:latest' }}",
+        "timeoutMinutes": "={{ Number($json.timeoutMinutes) || 30 }}",
+        "openAIModel": "={{ $json.openAIModel || 'gpt-4o-mini' }}",
+        "azureOpenAIEndpoint": "={{ $json.azureOpenAIEndpoint || '' }}",
+        "azureOpenAIDeployment": "={{ $json.azureOpenAIDeployment || 'gpt-4o-mini' }}",
+        "elevenLabsVoiceId": "={{ $json.elevenLabsVoiceId || 'UPXQvvSDDubCtocmbltQ' }}",
+        "elevenLabsModelId": "={{ $json.elevenLabsModelId || 'eleven_multilingual_v2' }}",
+        "videoWidth": "={{ Number($json.videoWidth) || 1920 }}",
+        "videoHeight": "={{ Number($json.videoHeight) || 1080 }}",
+        "videoFrameRate": "={{ Number($json.videoFrameRate) || 30 }}",
+        "rewriteExtraInstructions": "={{ $json.rewriteExtraInstructions }}",
+        "keepArtifacts": "={{ $json.keepArtifacts !== 'false' }}"
+      },
+      "id": "start-job",
+      "name": "Start job",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 3,
+      "position": [280, 0]
+    },
+    {
+      "parameters": {
+        "operation": "wait",
+        "jobId": "={{ $json.jobId }}",
+        "pollInterval": 5,
+        "waitTimeoutMinutes": 120
+      },
+      "id": "wait-job",
+      "name": "Wait until complete",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 3,
+      "position": [560, 0]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "download-video",
+      "name": "Download merged video",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 3,
+      "position": [840, 0]
+    }
+  ],
+  "connections": {
+    "On form submission": {
+      "main": [[{ "node": "Start job", "type": "main", "index": 0 }]]
+    },
+    "Start job": {
+      "main": [[{ "node": "Wait until complete", "type": "main", "index": 0 }]]
+    },
+    "Wait until complete": {
+      "main": [[{ "node": "Download merged video", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "active": false
+}

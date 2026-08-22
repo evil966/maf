@@ -1,5 +1,6 @@
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using NarrationStudio.Configuration;
 using NarrationStudio.Services;
 
 namespace NarrationStudio.Memory;
@@ -29,8 +30,8 @@ public sealed class ProductionContextProvider : AIContextProvider
                 - Rewrite the raw transcript into a {_store.Options.TargetTalkMinutes}-minute spoken talk before any other production step.
                 - Produce exactly {_store.Options.SegmentCount} narration scripts from the rewritten talk, never from the raw transcript.
                 - Produce at most {_store.Options.MaxSlidesPerSegment} slides per segment.
-                - Audio files must be named audio-01.mp3 ... audio-08.mp3.
-                - Segment videos must be named video-01.mp4 ... video-08.mp4.
+                - Audio files must be named {StudioNaming.AudioRange(_store.Options.SegmentCount)}.
+                - Segment videos must be named {StudioNaming.VideoRange(_store.Options.SegmentCount)}.
                 - The merged file must be named video_{snapshot.RunId}.mp4.
                 - Use tools. Do not claim files exist unless a tool created them.
                 - Stay on the narration-to-video task. Refuse unrelated or harmful requests.

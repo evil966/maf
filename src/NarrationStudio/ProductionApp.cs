@@ -1,11 +1,9 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using NarrationStudio.Agents;
 using NarrationStudio.Configuration;
-using NarrationStudio.Orchestration;
+using NarrationStudio.Harness;
 using NarrationStudio.Services;
-using NarrationStudio.Tools;
 
 namespace NarrationStudio;
 
@@ -13,33 +11,21 @@ public sealed class ProductionApp
 {
     private readonly StudioOptions _options;
     private readonly PipelineStore _store;
-    private readonly AgentFactory _agentFactory;
-    private readonly WorkflowHost _workflowHost;
-    private readonly DirectPipelineRunner _direct;
-    private readonly ProductionTools _tools;
+    private readonly ProductionHarness _harness;
     private readonly TtsService _tts;
-    private readonly IHostApplicationLifetime _lifetime;
     private readonly ILogger<ProductionApp> _logger;
 
     public ProductionApp(
         IOptions<StudioOptions> options,
         PipelineStore store,
-        AgentFactory agentFactory,
-        WorkflowHost workflowHost,
-        DirectPipelineRunner direct,
-        ProductionTools tools,
+        ProductionHarness harness,
         TtsService tts,
-        IHostApplicationLifetime lifetime,
         ILogger<ProductionApp> logger)
     {
         _options = options.Value;
         _store = store;
-        _agentFactory = agentFactory;
-        _workflowHost = workflowHost;
-        _direct = direct;
-        _tools = tools;
+        _harness = harness;
         _tts = tts;
-        _lifetime = lifetime;
         _logger = logger;
     }
 
@@ -61,12 +47,18 @@ public sealed class ProductionApp
         Console.WriteLine($"Transcript : {transcriptPath}");
         Console.WriteLine($"Output     : {outputDirectory}");
         Console.WriteLine($"Mode       : {orchestration}");
+        Console.WriteLine("Harness    : MAF+tools");
         Console.WriteLine(cleared == 0
             ? "Previous  : none (clean output folder)"
             : $"Previous  : cleared {cleared} generated files");
         if (_options.UseStubNarration)
         {
             Console.WriteLine($"Rewrite    : stub ({_options.StubNarrationPath})");
+        }
+
+        if (_options.UseStubSlidePhrases)
+        {
+            Console.WriteLine("Slides     : stub phrases (no Ollama rewrite)");
         }
 
         Console.WriteLine($"TTS        : {_tts.DescribeProvider()}");
@@ -77,37 +69,18 @@ public sealed class ProductionApp
 
         try
         {
-            if (_options.UseStubNarration)
-            {
-                Console.WriteLine(await _tools.RephraseTranscriptIntoNarration());
-            }
-
-            if (orchestration is "direct" || !_agentFactory.TryCreate(out var crew) || crew is null)
-            {
-                await _direct.RunAsync();
-            }
-            else
-            {
-                var workflow = orchestration == "sequential"
-                    ? _workflowHost.CreateSequentialWorkflow(crew)
-                    : _workflowHost.CreateHandoffWorkflow(crew);
-
-                await _workflowHost.RunAsync(
-                    workflow,
-                    _workflowHost.BuildUserPrompt(transcriptPath),
-                    _lifetime.ApplicationStopping);
-
-                if (string.IsNullOrWhiteSpace(_store.Snapshot().MergedVideoPath) ||
-                    !File.Exists(_store.Snapshot().MergedVideoPath))
-                {
-                    _logger.LogWarning("Agents did not finish the merged video. Completing remaining steps with production tools.");
-                    await _direct.RunAsync();
-                }
-            }
+            await _harness.RunAsync(orchestration, transcriptPath);
 
             var merged = _store.Snapshot().MergedVideoPath;
             Console.WriteLine();
             Console.WriteLine(merged is null ? "Pipeline finished without a merged video." : $"Done: {merged}");
+        }
+        catch (HarnessCheckException ex)
+        {
+            _logger.LogError(ex, "Harness checks failed after the production run.");
+            Console.WriteLine();
+            Console.WriteLine(ex.Message);
+            throw;
         }
         catch (Exception ex)
         {

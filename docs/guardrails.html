@@ -135,7 +135,7 @@
     .Use(guardrails.FunctionAsync)
     .Build();</pre>
 <p>Source: <code>src/NarrationStudio/Agents/AgentFactory.cs</code>. <b>Inferred:</b> <code>.Use(RunAsync)</code> runs around the agent’s chat turn; <code>.Use(FunctionAsync)</code> runs around each tool invocation.</p>
-<p><code>DirectPipelineRunner</code> never constructs or calls <code>ProductionGuardrails</code>.</p>
+<p><code>DirectExecutor</code> never constructs or calls <code>ProductionGuardrails</code>.</p>
 
 <h2>RunAsync — message filter and block</h2>
 <p>File: <code>src/NarrationStudio/Guardrails/ProductionGuardrails.cs</code>.</p>
@@ -159,10 +159,7 @@
 <p>Substring blocking is naive: a user message that contains “harmful” in an unrelated sentence is refused. A jailbreak that avoids those six strings is not.</p>
 
 <h2>FunctionAsync — tool wrapper</h2>
-<p>Every tool call from an agent is logged (<code>Tool {Name} starting</code> / <code>finished</code>).</p>
-<p>If the tool name contains <code>"Slide"</code> and the string result contains the word <code>"slide"</code> more times than <code>MaxSlidesPerSegment * SegmentCount</code> (default 5 × 8 = 40), it logs:</p>
-<p><code>Slide-count guardrail trimmed an oversized tool result.</code></p>
-<div class="callout warn"><b>Confirmed:</b> it does not trim or reject the result. The original tool return value is passed through unchanged. The 8-script / 5-slide caps that actually stop the pipeline are in <code>ProductionTools</code> (<code>EnsureScripts</code>, <code>Take(MaxSlidesPerSegment)</code>, <code>SaveNarrationScripts</code> count check).</div>
+<p>Every tool call from an agent is logged (<code>Tool {Name} starting</code> / <code>finished</code>). The unused slide-count “trim” warning was removed; script and slide caps stay in <code>ProductionTools</code>.</p>
 
 <h2>Prompt “guardrails” (not middleware)</h2>
 <p><code>ProductionContextProvider.ProvideAIContextAsync</code> injects instructions such as:</p>
@@ -206,7 +203,7 @@
   <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Attaches middleware to every specialist</td></tr>
   <tr><td><code>src/NarrationStudio/Memory/ProductionContextProvider.cs</code></td><td>Prompt-level “Guardrails you must obey”</td></tr>
   <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Hard 8-script / 5-slide validation</td></tr>
-  <tr><td><code>src/NarrationStudio/Orchestration/DirectPipelineRunner.cs</code></td><td>No guardrail middleware</td></tr>
+  <tr><td><code>src/NarrationStudio/Orchestration/DirectExecutor.cs</code></td><td>No guardrail middleware</td></tr>
 </table>
 
 </body>

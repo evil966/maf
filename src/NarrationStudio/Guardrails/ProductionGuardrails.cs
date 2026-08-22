@@ -2,7 +2,6 @@ using System.Text.RegularExpressions;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
-using NarrationStudio.Configuration;
 
 namespace NarrationStudio.Guardrails;
 
@@ -13,12 +12,10 @@ public sealed class ProductionGuardrails
         "harmful", "illegal", "violence", "exploit", "malware", "bypass paywall"
     ];
 
-    private readonly StudioOptions _options;
     private readonly ILogger _logger;
 
-    public ProductionGuardrails(StudioOptions options, ILogger logger)
+    public ProductionGuardrails(ILogger logger)
     {
-        _options = options;
         _logger = logger;
     }
 
@@ -52,14 +49,6 @@ public sealed class ProductionGuardrails
     {
         _logger.LogInformation("Tool {Name} starting", context.Function.Name);
         var result = await next(context, cancellationToken);
-
-        if (result is string text &&
-            context.Function.Name.Contains("Slide", StringComparison.OrdinalIgnoreCase) &&
-            Regex.Matches(text, "slide", RegexOptions.IgnoreCase).Count > _options.MaxSlidesPerSegment * _options.SegmentCount)
-        {
-            _logger.LogWarning("Slide-count guardrail trimmed an oversized tool result.");
-        }
-
         _logger.LogInformation("Tool {Name} finished", context.Function.Name);
         return result;
     }

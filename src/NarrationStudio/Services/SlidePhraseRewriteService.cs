@@ -2,6 +2,8 @@ using System.Diagnostics;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using NarrationStudio.Configuration;
 using NarrationStudio.Models;
 
 namespace NarrationStudio.Services;
@@ -9,25 +11,30 @@ namespace NarrationStudio.Services;
 public sealed class SlidePhraseRewriteService
 {
     private readonly OllamaChatClientFactory _factory;
+    private readonly StudioOptions _options;
     private readonly ILogger<SlidePhraseRewriteService> _logger;
 
     public SlidePhraseRewriteService(
         OllamaChatClientFactory factory,
+        IOptions<StudioOptions> options,
         ILogger<SlidePhraseRewriteService> logger)
     {
         _factory = factory;
+        _options = options.Value;
         _logger = logger;
     }
 
     public async Task RewriteAllAsync(IEnumerable<NarrationSegment> segments, CancellationToken cancellationToken)
     {
-        var chat = _factory.Create();
         var total = Stopwatch.StartNew();
         var rewritten = 0;
+        IChatClient? chat = null;
+
         foreach (var segment in segments)
         {
             foreach (var slide in segment.Slides)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (slide.PhraseRewritten && !string.IsNullOrWhiteSpace(slide.Phrase))
                 {
                     continue;
@@ -40,6 +47,15 @@ public sealed class SlidePhraseRewriteService
                 }
 
                 slide.SourcePhrase = source.Trim();
+                if (_options.UseStubSlidePhrases)
+                {
+                    slide.Phrase = TrimForSlide(slide.SourcePhrase);
+                    slide.PhraseRewritten = true;
+                    rewritten++;
+                    continue;
+                }
+
+                chat ??= _factory.Create();
                 slide.Phrase = await RephraseToOneSentenceAsync(chat, segment.Number, slide.Number, slide.SourcePhrase, cancellationToken);
                 slide.PhraseRewritten = true;
                 rewritten++;
@@ -48,7 +64,12 @@ public sealed class SlidePhraseRewriteService
 
         if (rewritten > 0)
         {
-            _logger.LogInformation("Rephrased {Count} slide sentence(s) in {Elapsed:0.0}s.", rewritten, total.Elapsed.TotalSeconds);
+            _logger.LogInformation(
+                _options.UseStubSlidePhrases
+                    ? "Stubbed {Count} slide sentence(s) in {Elapsed:0.0}s."
+                    : "Rephrased {Count} slide sentence(s) in {Elapsed:0.0}s.",
+                rewritten,
+                total.Elapsed.TotalSeconds);
         }
     }
 
@@ -102,7 +123,7 @@ public sealed class SlidePhraseRewriteService
         return sentence;
     }
 
-    private static string FirstSentence(string text)
+    internal static string FirstSentence(string text)
     {
         var flat = Regex.Replace(text, @"\s+", " ").Trim().Trim('"', '\'', '“', '”');
         var match = Regex.Match(flat, @"^[^.!?]+[.!?]");

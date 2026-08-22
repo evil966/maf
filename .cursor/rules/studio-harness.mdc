@@ -1,0 +1,12 @@
+---
+description: Keep Narration Studio harness-centric. Tools own I/O; do not hardcode segment counts.
+globs: src/NarrationStudio/**/*.cs
+alwaysApply: false
+---
+
+# Narration Studio harness
+
+- Change `ProductionTools` and `PipelineStore` before agent prompts.
+- Interpolate `StudioOptions` (`SegmentCount`, `MaxSlidesPerSegment`, `TargetTalkMinutes`) instead of hardcoding 8 / 5 / 7.
+- Do not add file-write methods on agents. New pipeline stages are new tool methods.
+- After a run, `HarnessChecks` must be able to fail the process if artifacts are missing.

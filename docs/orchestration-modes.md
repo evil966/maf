@@ -10,11 +10,13 @@ This note describes the three `dotnet run` modes (`handoff`, `sequential`, `dire
 | --- | --- |
 | Are the three modes a MAF requisite? | **No.** MAF ships **handoff** and **sequential** as workflow builders. It does not require a CLI with three modes, and it has no “direct” orchestration type. |
 | Why are they in this app? | **By design** of this boilerplate: demonstrate two MAF graphs, plus a no-agent factory that still produces the video. |
-| Did this documentation pass insert them? | **No.** `--orchestration`, default `handoff`, `DirectPipelineRunner`, and failover to direct were in the **first commit** (`0436a60`, 20 August 2026). Later commits only changed *how* those modes behave (stub skips the rewriter agent; direct always overwrites media). |
+| Did this documentation pass insert them? | **No.** `--orchestration`, default `handoff`, `DirectExecutor`, and failover to direct were in the **first commit** (`0436a60`, 20 August 2026). Later commits only changed *how* those modes behave (stub skips the rewriter agent; direct always overwrites media). |
 
 ## How to invoke
 
 Working directory should be the **repo root**. The `--` after the project path is required so `dotnet` does not swallow the flag.
+
+Empty args (no `--orchestration` and no transcript path) start the **HTTP job API** for n8n, not a CLI handoff run. See `docs/n8n-service.pdf`.
 
 ```powershell
 dotnet run --project src\NarrationStudio
@@ -44,7 +46,7 @@ If the string is anything other than `direct` or `sequential` (including typos),
 | `AIAgent` / `AsAIAgent` / `AIFunctionFactory.Create` | MAF + `Microsoft.Extensions.AI` | Wrap an `IChatClient` as an agent with tools. |
 | `--orchestration` CLI | This app | Expose the two MAF graphs and the no-agent path without recompiling. |
 | Default `handoff` | This app | The intended “MAF demo” path. |
-| `DirectPipelineRunner` | This app | Deterministic factory: call `ProductionTools` in order. Not a MAF type. |
+| `DirectExecutor` | This app | Deterministic factory: call `ProductionTools` in order. Not a MAF type. |
 | Failover: if agents do not produce a merged MP4, call direct | This app | Video is the product; the LLM is optional. |
 | Fall through to direct if `TryCreate` fails | This app | No Ollama/OpenAI/Azure client → still produce media. |
 | Stub rewrite before `TryCreate`; omit `narration_rewriter` from the graph when stubbing | This app (later change) | Avoid connecting to Ollama just to copy `voice_transcript_ollama.txt`. |
@@ -65,7 +67,7 @@ MAF requisites for **handoff or sequential only** are: an `IChatClient`, agents,
 
 - `--orchestration direct`, or
 - `AgentFactory.TryCreate` returns false (no chat client), or
-- workflow returns and `MergedVideoPath` is missing / file not on disk → log warning and `DirectPipelineRunner.RunAsync()`.
+- workflow returns and `MergedVideoPath` is missing / file not on disk → log warning and `DirectExecutor.RunAsync()`.
 
 ### `sequential`
 
@@ -82,7 +84,7 @@ No coordinator. **Inferred:** MAF runs that list in order; it does not consult h
 
 ### `direct`
 
-**What.** `DirectPipelineRunner.RunAsync` calls tools in a fixed C# order:
+**What.** `DirectExecutor.RunAsync` calls tools in a fixed C# order:
 
 1. `GetPipelineStatus`
 2. `RephraseTranscriptIntoNarration` only if `NarrationPath` is empty/missing (ProductionApp usually already stub-copied it)
@@ -109,14 +111,16 @@ Direct still talks to Ollama for **slide sentences** and to ElevenLabs/SAPI for 
 ProductionApp.RunAsync
   → mutex NarrationStudio.Production
   → ResolveOrchestration  (default handoff)
-  → Initialize (wipe media; keep old production-notes-* folders)
-  → if UseStubNarration: RephraseTranscriptIntoNarration (copy stub)
-  → if mode == direct OR TryCreate fails
-        → DirectPipelineRunner
-    else
-        → sequential ? CreateSequentialWorkflow : CreateHandoffWorkflow
-        → WorkflowHost.RunAsync (MAF streaming)
-        → if no merged MP4 → DirectPipelineRunner
+  → Initialize (wipe media; keep old memory folders)
+  → ProductionHarness.RunAsync
+      → if UseStubNarration: RephraseTranscriptIntoNarration (copy stub)
+      → if mode == direct OR TryCreate fails
+            → DirectExecutor
+        else
+            → sequential ? CreateSequentialWorkflow : CreateHandoffWorkflow
+            → WorkflowHost.RunAsync (MAF streaming)
+            → if no merged MP4 → DirectExecutor
+      → HarnessChecks.Verify (throw if artifacts missing)
   → print Done: path
 ```
 
@@ -138,7 +142,7 @@ Microsoft’s docs describe handoff and sequential as **alternative orchestratio
 
 - `ProductionApp.ResolveOrchestration` and default `handoff`
 - `WorkflowHost.CreateHandoffWorkflow` and `CreateSequentialWorkflow`
-- `DirectPipelineRunner`
+- `DirectExecutor`
 - Failover to direct when merge is missing
 - Fall through to direct when `TryCreate` fails
 
@@ -155,7 +159,7 @@ That first commit is the Narration Studio boilerplate as first built in this wor
 | Ollama slide sentences | All three modes hit Ollama during plan/render. Independent of orchestration. |
 | Timestamped memory snapshots | All modes write `production-notes-{RunId}`. Only handoff/sequential construct MAF `FileMemoryProvider`. |
 
-**This documentation session** (harness / agentic / internal-workings PDFs) did **not** add `--orchestration` or `DirectPipelineRunner`. It only described them.
+**This documentation session** (harness / agentic / internal-workings PDFs) did **not** add `--orchestration` or `DirectExecutor`. It only described them.
 
 If “inserted by you” means “did an AI invent a fake MAF requirement?”: **no.** If it means “did an AI add a no-agent path when building the boilerplate?”: **yes — as a deliberate app design**, present from the first commit, so the factory is not hostage to the coordinator.
 
@@ -179,5 +183,6 @@ If “inserted by you” means “did an AI invent a fake MAF requirement?”: *
 | `src/NarrationStudio/ProductionApp.cs` | CLI parse, default, TryCreate gate, failover |
 | `src/NarrationStudio/Agents/WorkflowHost.cs` | Handoff graph, sequential list, user prompt, streaming run |
 | `src/NarrationStudio/Agents/AgentFactory.cs` | Crew, tools, chat client, guardrails, file memory |
-| `src/NarrationStudio/Orchestration/DirectPipelineRunner.cs` | No-agent tool loop |
+| `src/NarrationStudio/Harness/ProductionHarness.cs` | Run policy, failover, HarnessChecks |
+| `src/NarrationStudio/Orchestration/DirectExecutor.cs` | No-agent tool loop |
 | `src/NarrationStudio/Tools/ProductionTools.cs` | Shared I/O for every mode |

@@ -78,8 +78,14 @@ public sealed class AgentFactory
             _ => new FileMemoryState { WorkingFolder = _store.AgentMemoryWorkingFolder });
         _logger.LogInformation("Agent file memory for this run: {Path}", _store.AgentMemoryDirectory);
 
-        var guardrails = new ProductionGuardrails(_options, _loggerFactory.CreateLogger<ProductionGuardrails>());
+        var guardrails = new ProductionGuardrails(_loggerFactory.CreateLogger<ProductionGuardrails>());
         IList<AIContextProvider> providers = [_context, fileMemory];
+
+        var segments = _options.SegmentCount;
+        var maxSlides = _options.MaxSlidesPerSegment;
+        var minutes = _options.TargetTalkMinutes;
+        var audioRange = StudioNaming.AudioRange(segments);
+        var videoRange = StudioNaming.VideoRange(segments);
 
         var coordinator = Create(
             chatClient,
@@ -89,16 +95,16 @@ public sealed class AgentFactory
             name: "coordinator",
             description: "Routes the narration-to-video pipeline to the right specialist.",
             instructions:
-            """
+            $"""
             You coordinate a narration-to-video factory.
             Previous generated files were deleted at the start of this run, so nothing is already finished.
             Always call GetPipelineStatus first.
             Then hand off every specialist in order until the merged video for THIS run exists:
-            - narration_rewriter only if the 7-minute talk does not exist and stubbing is off
-            - script_segmenter if eight narration scripts do not exist (always from the rewritten narration, never the raw transcript)
+            - narration_rewriter only if the {minutes}-minute talk does not exist and stubbing is off
+            - script_segmenter if {segments} narration scripts do not exist (always from the rewritten narration, never the raw transcript)
             - slide_planner to plan slides for the current scripts
             - image_renderer to render PNG slides
-            - tts_producer to synthesize audio-01.mp3 through audio-08.mp3
+            - tts_producer to synthesize {audioRange}
             - video_composer to compose segment videos and merge them
             When the merged video exists, tell the user the full path and stop.
             Never skip a specialist. Never invent file names. Never reuse leftover files from an earlier run.
@@ -112,9 +118,9 @@ public sealed class AgentFactory
             providers,
             id: "narration-rewriter",
             name: "narration_rewriter",
-            description: "Rephrases voice_transcript.txt through local Ollama into a 7-minute executive talk.",
+            description: $"Rephrases voice_transcript.txt through local Ollama into a {minutes}-minute executive talk.",
             instructions:
-            """
+            $"""
             You prepare the spoken script for the rest of the pipeline.
             Always call RephraseTranscriptIntoNarration. Do not rewrite the transcript yourself.
             Do not call LoadTranscript. The tool loads the source and, when stubbing is on, uses voice_transcript_ollama.txt.
@@ -133,12 +139,12 @@ public sealed class AgentFactory
             providers,
             id: "script-segmenter",
             name: "script_segmenter",
-            description: "Splits the rewritten 7-minute narration into eight scripts for TTS.",
+            description: $"Splits the rewritten {minutes}-minute narration into {segments} scripts for TTS.",
             instructions:
-            """
-            You turn the rewritten 7-minute talk into exactly 8 narration scripts.
+            $"""
+            You turn the rewritten {minutes}-minute talk into exactly {segments} narration scripts.
             Call LoadNarrationSource (not the raw transcript), then SegmentTranscriptIntoEightScripts.
-            You may refine scripts with SaveNarrationScripts only if you still produce exactly 8 items.
+            You may refine scripts with SaveNarrationScripts only if you still produce exactly {segments} items.
             After the scripts exist, hand control back to coordinator.
             """,
             tools:
@@ -155,12 +161,12 @@ public sealed class AgentFactory
             providers,
             id: "slide-planner",
             name: "slide_planner",
-            description: "Plans at most five on-screen phrases per narration segment.",
+            description: $"Plans at most {maxSlides} on-screen phrases per narration segment.",
             instructions:
-            """
-            Create slide phrases for each of the 8 narration scripts.
-            Call PlanSlidesForAllSegments. Each segment may have at most 5 slides.
-            That tool splits the script, then Ollama rewrites each excerpt as one sentence for the slide image.
+            $"""
+            Create slide phrases for each of the {segments} narration scripts.
+            Call PlanSlidesForAllSegments. Each segment may have at most {maxSlides} slides.
+            That tool splits the script, then {(_options.UseStubSlidePhrases ? "uses the excerpt as the on-screen sentence" : "Ollama rewrites each excerpt as one sentence for the slide image")}.
             Do not invent slide text yourself. Always re-plan for this run, then hand off to image_renderer.
             """,
             tools:
@@ -179,7 +185,7 @@ public sealed class AgentFactory
             instructions:
             """
             Render one PNG slide for every planned phrase. Always overwrite previous PNGs.
-            Each PNG must show the one-sentence Ollama rewrite stored on the slide, not the raw excerpt.
+            Each PNG must show the on-screen sentence stored on the slide, not the raw excerpt.
             Call RenderAllSlideImages, then hand control back to coordinator.
             """,
             tools:
@@ -194,11 +200,11 @@ public sealed class AgentFactory
             providers,
             id: "tts-producer",
             name: "tts_producer",
-            description: "Creates audio-01.mp3 through audio-08.mp3 from the narration scripts.",
+            description: $"Creates {audioRange} from the narration scripts.",
             instructions:
-            """
-            After the 8 narration scripts exist, synthesize one MP3 per script. Always overwrite previous MP3s.
-            Call SynthesizeAllAudioAsync. File names must be audio-01.mp3 ... audio-08.mp3.
+            $"""
+            After the {segments} narration scripts exist, synthesize one MP3 per script. Always overwrite previous MP3s.
+            Call SynthesizeAllAudioAsync. File names must be {audioRange}.
             Then hand control back to coordinator.
             """,
             tools:
@@ -213,10 +219,10 @@ public sealed class AgentFactory
             providers,
             id: "video-composer",
             name: "video_composer",
-            description: "Syncs slides to each MP3, then merges the eight videos.",
+            description: $"Syncs slides to each MP3, then merges the {segments} videos.",
             instructions:
-            """
-            Create video-01.mp4 ... video-08.mp4 by syncing each segment's slides to that segment's MP3.
+            $"""
+            Create {videoRange} by syncing each segment's slides to that segment's MP3.
             Always overwrite previous segment videos, then merge.
             Call ComposeAllSegmentVideos, then MergeAllVideos.
             The merged file must use the timestamped name from the pipeline.
@@ -272,8 +278,12 @@ public sealed class AgentFactory
             _options.AzureOpenAIDeployment,
             Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME"),
             Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT")) ?? "gpt-4o-mini";
-        var azureKey = Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY");
-        var openAiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        var azureKey = FirstNonEmpty(
+            _options.AzureOpenAIApiKey,
+            Environment.GetEnvironmentVariable("AZURE_OPENAI_API_KEY"));
+        var openAiKey = FirstNonEmpty(
+            _options.OpenAIApiKey,
+            Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
         var model = FirstNonEmpty(_options.OpenAIModel, Environment.GetEnvironmentVariable("OPENAI_MODEL")) ?? "gpt-4o-mini";
 
         if (!string.IsNullOrWhiteSpace(azureEndpoint))

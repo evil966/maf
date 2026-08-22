@@ -4,7 +4,7 @@ This note describes the **option** of evolving Narration Studio from a scripted 
 
 **Confirmed** means current behavior in this repository’s source. **Proposed** means work that is not implemented. **Inferred** means industry definition, not a type in this repo.
 
-Related: `docs/harness-engineering.md` (runtime scaffold: loop, tools, context, control). A harness is necessary but not sufficient for an agentic product.
+Related: `docs/harness-engineering.md` (runtime scaffold: loop, tools, context, control). A harness is necessary but not sufficient for an agentic product. HTTP entry for n8n is documented in `docs/n8n-service.pdf` and `docs/NarrationStudio-Internal-Workings.pdf` §19 — n8n starts jobs; it does not own I/O.
 
 ## Verdict
 

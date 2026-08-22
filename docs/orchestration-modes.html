@@ -118,7 +118,7 @@
   <tr><th>Question</th><th>Answer</th></tr>
   <tr><td>Are the three modes a MAF requisite?</td><td><b>No.</b> MAF ships <b>handoff</b> and <b>sequential</b> as workflow builders. It does not require a CLI with three modes, and it has no “direct” orchestration type.</td></tr>
   <tr><td>Why are they in this app?</td><td><b>By design</b> of this boilerplate: demonstrate two MAF graphs, plus a no-agent factory that still produces the video.</td></tr>
-  <tr><td>Did this documentation pass insert them?</td><td><b>No.</b> <code>--orchestration</code>, default <code>handoff</code>, <code>DirectPipelineRunner</code>, and failover to direct were in the <b>first commit</b> (<code>0436a60</code>, 20 August 2026). Later commits only changed <i>how</i> those modes behave (stub skips the rewriter agent; direct always overwrites media).</td></tr>
+  <tr><td>Did this documentation pass insert them?</td><td><b>No.</b> <code>--orchestration</code>, default <code>handoff</code>, <code>DirectExecutor</code>, and failover to direct were in the <b>first commit</b> (<code>0436a60</code>, 20 August 2026). Later commits only changed <i>how</i> those modes behave (stub skips the rewriter agent; direct always overwrites media).</td></tr>
 </table>
 
 <h2>How to invoke</h2>
@@ -146,7 +146,7 @@ dotnet run --project src\NarrationStudio -- path\to\transcript.txt --orchestrati
   <tr><td><code>AIAgent</code> / <code>AsAIAgent</code> / <code>AIFunctionFactory</code></td><td>MAF + <code>Microsoft.Extensions.AI</code></td><td>Wrap an <code>IChatClient</code> as an agent with tools.</td></tr>
   <tr><td><code>--orchestration</code> CLI</td><td>This app</td><td>Expose the two MAF graphs and the no-agent path without recompiling.</td></tr>
   <tr><td>Default <code>handoff</code></td><td>This app</td><td>The intended “MAF demo” path.</td></tr>
-  <tr><td><code>DirectPipelineRunner</code></td><td>This app</td><td>Deterministic factory: call <code>ProductionTools</code> in order. Not a MAF type.</td></tr>
+  <tr><td><code>DirectExecutor</code></td><td>This app</td><td>Deterministic factory: call <code>ProductionTools</code> in order. Not a MAF type.</td></tr>
   <tr><td>Failover if agents do not produce a merged MP4</td><td>This app</td><td>Video is the product; the LLM is optional.</td></tr>
   <tr><td>Fall through to direct if <code>TryCreate</code> fails</td><td>This app</td><td>No Ollama/OpenAI/Azure client → still produce media.</td></tr>
   <tr><td>Stub rewrite before <code>TryCreate</code>; omit rewriter from the graph when stubbing</td><td>This app (later change)</td><td>Avoid connecting to Ollama just to copy <code>voice_transcript_ollama.txt</code>.</td></tr>
@@ -159,14 +159,14 @@ dotnet run --project src\NarrationStudio -- path\to\transcript.txt --orchestrati
 <p><b>What.</b> <code>WorkflowHost.CreateHandoffWorkflow</code>. Coordinator agent (<code>GetPipelineStatus</code> only) plus specialists. Each specialist is granted a small tool set. Handoff edges include coordinator → each specialist, rewriter → segmenter (if stubbing is off), slide_planner → image_renderer, and every specialist → coordinator (“return after tools”).</p>
 <p><b>Autonomous mode (confirmed).</b> <code>WithAutonomousMode(turnLimit: 8, continuationPrompt: "Continue from GetPipelineStatus…", agents: [coordinator])</code>. After eight coordinator turns the MAF runtime is expected to stop (<b>inferred</b> exact stop semantics).</p>
 <p><b>Why.</b> This is the Microsoft-style multi-agent demo: a router decides who runs next. It exists to exercise MAF handoff, not because the factory needs a router. The pipeline order is already known.</p>
-<p><b>When it still becomes direct:</b> <code>--orchestration direct</code>; or <code>TryCreate</code> returns false; or the workflow returns and <code>MergedVideoPath</code> is missing → log warning and <code>DirectPipelineRunner.RunAsync()</code>.</p>
+<p><b>When it still becomes direct:</b> <code>--orchestration direct</code>; or <code>TryCreate</code> returns false; or the workflow returns and <code>MergedVideoPath</code> is missing → log warning and <code>DirectExecutor.RunAsync()</code>.</p>
 
 <h3><code>sequential</code></h3>
 <p><b>What.</b> <code>CreateSequentialWorkflow</code> → <code>BuildSequential("narration-studio-sequential", agents)</code>. Order when stubbing is on: segmenter → slide_planner → image_renderer → tts → video_composer. When stubbing is off, rewriter runs first. No coordinator. <b>Inferred:</b> MAF runs that list in order; it does not consult handoff conditions.</p>
 <p><b>Why.</b> Second MAF sample path: do not make the model choose the next specialist. Useful when handoff routing is unreliable. Still requires a live LLM for each agent’s tool-calling turn. Same merge failover as handoff.</p>
 
 <h3><code>direct</code></h3>
-<p><b>What.</b> <code>DirectPipelineRunner.RunAsync</code> calls tools in a fixed C# order: status; rephrase only if narration file missing; always segment; plan slides (regex + Ollama one-sentence); render PNGs; TTS; compose; merge.</p>
+<p><b>What.</b> <code>DirectExecutor.RunAsync</code> calls tools in a fixed C# order: status; rephrase only if narration file missing; always segment; plan slides (regex + Ollama one-sentence); render PNGs; TTS; compose; merge.</p>
 <p>No <code>FileMemoryProvider</code>, no <code>ProductionGuardrails</code>. Snapshots still write because <code>PipelineStore.Mutate</code> always snapshots.</p>
 <p><b>Why.</b> The video must ship even when Ollama/OpenAI is down, the model skips a specialist, or you want a repeatable factory. Direct still talks to Ollama for <b>slide sentences</b> and to ElevenLabs/SAPI for TTS. “No agents” is not “no LLMs.”</p>
 
@@ -174,14 +174,16 @@ dotnet run --project src\NarrationStudio -- path\to\transcript.txt --orchestrati
 <pre>ProductionApp.RunAsync
   → mutex NarrationStudio.Production
   → ResolveOrchestration  (default handoff)
-  → Initialize (wipe media; keep old production-notes-* folders)
-  → if UseStubNarration: RephraseTranscriptIntoNarration (copy stub)
-  → if mode == direct OR TryCreate fails
-        → DirectPipelineRunner
-    else
-        → sequential ? CreateSequentialWorkflow : CreateHandoffWorkflow
-        → WorkflowHost.RunAsync (MAF streaming)
-        → if no merged MP4 → DirectPipelineRunner
+  → Initialize (wipe media; keep old memory folders)
+  → ProductionHarness.RunAsync
+      → if UseStubNarration: RephraseTranscriptIntoNarration (copy stub)
+      → if mode == direct OR TryCreate fails
+            → DirectExecutor
+        else
+            → sequential ? CreateSequentialWorkflow : CreateHandoffWorkflow
+            → WorkflowHost.RunAsync (MAF streaming)
+            → if no merged MP4 → DirectExecutor
+      → HarnessChecks.Verify (throw if artifacts missing)
   → print Done: path</pre>
 
 <h2>Why this shape (design, not a MAF rule)</h2>
@@ -195,10 +197,10 @@ dotnet run --project src\NarrationStudio -- path\to\transcript.txt --orchestrati
 <p>Microsoft’s docs describe handoff and sequential as <b>alternative orchestration styles</b>. They do not say an application must expose both plus a third non-agent runner. That combination is this repo’s teaching/production design.</p>
 
 <h2>Provenance (git and this project’s history)</h2>
-<p><b>First commit <code>0436a60</code> (20 August 2026, author Edwin Villapando)</b> already contained <code>ResolveOrchestration</code> and default <code>handoff</code>, both MAF graphs, <code>DirectPipelineRunner</code>, failover when merge is missing, and fall through when <code>TryCreate</code> fails.</p>
+<p><b>First commit <code>0436a60</code> (20 August 2026, author Edwin Villapando)</b> already contained <code>ResolveOrchestration</code> and default <code>handoff</code>, both MAF graphs, <code>DirectExecutor</code>, failover when merge is missing, and fall through when <code>TryCreate</code> fails.</p>
 <p>So the three-mode CLI is <b>original application design</b>, not a late documentation-session patch. That first commit is the boilerplate as first built in this workspace (Cursor agent + your git author). It is <b>not</b> a file copied unchanged from the MAF NuGet samples. MAF contributed the <b>APIs</b>; this app contributed the <b>CLI, crew, tools, and direct runner</b>.</p>
 <p><b>Later commits</b> (same repo, not a MAF upgrade): stub narration omits <code>narration_rewriter</code> from the graph; direct always re-segments/overwrites instead of skipping if counts matched; Ollama slide sentences run in all modes; timestamped memory snapshots in all modes, MAF file memory only in agent modes.</p>
-<p><b>This documentation session</b> did <b>not</b> add <code>--orchestration</code> or <code>DirectPipelineRunner</code>. It only described them.</p>
+<p><b>This documentation session</b> did <b>not</b> add <code>--orchestration</code> or <code>DirectExecutor</code>. It only described them.</p>
 <p>If “inserted by you” means “did an AI invent a fake MAF requirement?”: <b>no.</b> If it means “did an AI add a no-agent path when building the boilerplate?”: <b>yes — as a deliberate app design</b>, present from the first commit, so the factory is not hostage to the coordinator.</p>
 
 <h2>What each mode needs at runtime</h2>
@@ -220,7 +222,8 @@ dotnet run --project src\NarrationStudio -- path\to\transcript.txt --orchestrati
   <tr><td><code>src/NarrationStudio/ProductionApp.cs</code></td><td>CLI parse, default, TryCreate gate, failover</td></tr>
   <tr><td><code>src/NarrationStudio/Agents/WorkflowHost.cs</code></td><td>Handoff graph, sequential list, user prompt, streaming run</td></tr>
   <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Crew, tools, chat client, guardrails, file memory</td></tr>
-  <tr><td><code>src/NarrationStudio/Orchestration/DirectPipelineRunner.cs</code></td><td>No-agent tool loop</td></tr>
+  <tr><td><code>src/NarrationStudio/Harness/ProductionHarness.cs</code></td><td>Run policy, failover, HarnessChecks</td></tr>
+  <tr><td><code>src/NarrationStudio/Orchestration/DirectExecutor.cs</code></td><td>No-agent tool loop</td></tr>
   <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Shared I/O for every mode</td></tr>
 </table>
 

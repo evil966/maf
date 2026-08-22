@@ -3,6 +3,12 @@
     "NarrationStudio": {
       "commandName": "Project",
       "commandLineArgs": "",
+      "workingDirectory": "$(ProjectDir)..\\..",
+      "applicationUrl": "http://localhost:5088"
+    },
+    "NarrationStudio.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "--orchestration direct",
       "workingDirectory": "$(ProjectDir)..\\.."
     }
   }

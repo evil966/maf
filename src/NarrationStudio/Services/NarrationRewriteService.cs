@@ -109,6 +109,19 @@ public sealed class NarrationRewriteService
               repetition, and transcription artifacts.
             - Do not invent companies, dates, or savings figures that are not in the source.
 
+            """;
+        if (!string.IsNullOrWhiteSpace(_studio.RewriteExtraInstructions))
+        {
+            instructions +=
+                $"""
+                Additional operator instructions:
+                {_studio.RewriteExtraInstructions.Trim()}
+
+                """;
+        }
+
+        instructions +=
+            """
             Output rules:
             - Return only the words to be spoken.
             - No title, no stage directions, no markdown, no bullet lists, no thinking.

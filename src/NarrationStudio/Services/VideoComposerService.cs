@@ -6,7 +6,7 @@ namespace NarrationStudio.Services;
 
 public sealed class VideoComposerService
 {
-    public string ComposeSegment(NarrationSegment segment, StudioOptions options, string outputPath)
+    public string ComposeSegment(NarrationSegment segment, StudioOptions options, string outputPath, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(segment.AudioPath) || !File.Exists(segment.AudioPath))
         {
@@ -51,12 +51,12 @@ public sealed class VideoComposerService
             "-shortest",
             "-movflags", "+faststart",
             outputPath
-        ]);
+        ], cancellationToken);
 
         return outputPath;
     }
 
-    public string Merge(IReadOnlyList<string> videoPaths, string outputPath)
+    public string Merge(IReadOnlyList<string> videoPaths, string outputPath, CancellationToken cancellationToken = default)
     {
         if (videoPaths.Count == 0)
         {
@@ -76,7 +76,7 @@ public sealed class VideoComposerService
                 "-i", listPath,
                 "-c", "copy",
                 outputPath
-            ]);
+            ], cancellationToken);
         }
         catch
         {
@@ -90,7 +90,7 @@ public sealed class VideoComposerService
                 "-pix_fmt", "yuv420p",
                 "-movflags", "+faststart",
                 outputPath
-            ]);
+            ], cancellationToken);
         }
 
         return outputPath;

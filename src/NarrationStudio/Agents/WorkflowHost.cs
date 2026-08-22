@@ -2,6 +2,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Logging;
+using NarrationStudio.Configuration;
 using NarrationStudio.Services;
 
 namespace NarrationStudio.Agents;
@@ -19,20 +20,23 @@ public sealed class WorkflowHost
 
     public Workflow CreateHandoffWorkflow(ProductionCrew crew)
     {
+        var segments = _store.Options.SegmentCount;
+        var minutes = _store.Options.TargetTalkMinutes;
+        var audioRange = StudioNaming.AudioRange(segments);
         var builder = AgentWorkflowBuilder.CreateHandoffBuilderWith(crew.Coordinator);
 
         if (!_store.Options.UseStubNarration)
         {
             builder = builder
-                .WithHandoff(crew.Coordinator, crew.NarrationRewriter, "The raw transcript has not been rephrased into a 7-minute executive talk.")
-                .WithHandoff(crew.NarrationRewriter, crew.ScriptSegmenter, "The 7-minute narration is ready to split into 8 scripts.");
+                .WithHandoff(crew.Coordinator, crew.NarrationRewriter, $"The raw transcript has not been rephrased into a {minutes}-minute executive talk.")
+                .WithHandoff(crew.NarrationRewriter, crew.ScriptSegmenter, $"The {minutes}-minute narration is ready to split into {segments} scripts.");
         }
 
         return builder
-            .WithHandoff(crew.Coordinator, crew.ScriptSegmenter, "The rewritten narration exists but has not been split into 8 scripts.")
+            .WithHandoff(crew.Coordinator, crew.ScriptSegmenter, $"The rewritten narration exists but has not been split into {segments} scripts.")
             .WithHandoff(crew.Coordinator, crew.SlidePlanner, "Narration scripts exist but slide phrases are missing.")
             .WithHandoff(crew.Coordinator, crew.ImageRenderer, "Slide phrases exist but PNG slides are missing.")
-            .WithHandoff(crew.Coordinator, crew.TtsProducer, "Narration scripts exist but audio-01.mp3 through audio-08.mp3 are missing.")
+            .WithHandoff(crew.Coordinator, crew.TtsProducer, $"Narration scripts exist but {audioRange} are missing.")
             .WithHandoff(crew.Coordinator, crew.VideoComposer, "Audio and slides exist, so segment videos or the merged video can be created.")
             .WithHandoff(crew.SlidePlanner, crew.ImageRenderer, "Slide phrases are ready and should be rendered to PNG files.")
             .WithHandoffs(
@@ -108,9 +112,13 @@ public sealed class WorkflowHost
 
     public string BuildUserPrompt(string transcriptPath)
     {
-        var rewriteStep = _store.Options.UseStubNarration
-            ? "1. The 7-minute talk is already saved as output/scripts/narration-rewritten.txt from voice_transcript_ollama.txt. Do not call Ollama. Do not rewrite. Do not use the raw transcript."
-            : "1. Submit voice_transcript.txt to Ollama and rewrite it as a 7-minute talk for a mixed audience leaning toward executives.";
+        var options = _store.Options;
+        var segments = options.SegmentCount;
+        var minutes = options.TargetTalkMinutes;
+        var maxSlides = options.MaxSlidesPerSegment;
+        var rewriteStep = options.UseStubNarration
+            ? $"1. The {minutes}-minute talk is already saved as output/scripts/narration-rewritten.txt from {options.StubNarrationPath}. Do not call Ollama for the talk. Do not use the raw transcript."
+            : $"1. Submit voice_transcript.txt to Ollama and rewrite it as a {minutes}-minute talk for a mixed audience leaning toward executives.";
 
         return
             $"""
@@ -119,11 +127,11 @@ public sealed class WorkflowHost
 
             Required workflow:
             {rewriteStep}
-            2. Segment THAT rewritten narration into 8 narration scripts. Do not segment the raw transcript.
-            3. Create at most 5 image slides per script. Each slide contains a phrase covering part of that script.
-            4. When the 8 scripts exist, create audio-01.mp3 ... audio-08.mp3.
-            5. Sync each MP3 with that segment's slides into video-01.mp4 ... video-08.mp4.
-            6. Merge the eight videos into {_store.MergedVideoFileName()}.
+            2. Segment THAT rewritten narration into {segments} narration scripts. Do not segment the raw transcript.
+            3. Create at most {maxSlides} image slides per script. Each slide contains a phrase covering part of that script.
+            4. When the {segments} scripts exist, create {StudioNaming.AudioRange(segments)}.
+            5. Sync each MP3 with that segment's slides into {StudioNaming.VideoRange(segments)}.
+            6. Merge the {segments} videos into {_store.MergedVideoFileName()}.
 
             Use your tools. Handoff to the specialist who owns the next unfinished step.
             Current status:

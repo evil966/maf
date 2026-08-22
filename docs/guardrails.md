@@ -34,7 +34,7 @@ return agent
 
 Source: `src/NarrationStudio/Agents/AgentFactory.cs`. **Inferred:** `.Use(RunAsync)` runs around the agent’s chat turn; `.Use(FunctionAsync)` runs around each tool invocation.
 
-`DirectPipelineRunner` never constructs or calls `ProductionGuardrails`.
+`DirectExecutor` never constructs or calls `ProductionGuardrails`.
 
 ## `RunAsync` — message filter and block
 
@@ -71,13 +71,7 @@ Substring blocking is naive: a user message that contains “harmful” in an un
 
 ## `FunctionAsync` — tool wrapper
 
-Every tool call from an agent is logged (`Tool {Name} starting` / `finished`).
-
-If the tool name contains `"Slide"` and the string result contains the word `"slide"` more times than `MaxSlidesPerSegment * SegmentCount` (default 5 × 8 = 40), it logs:
-
-`Slide-count guardrail trimmed an oversized tool result.`
-
-**Confirmed: it does not trim or reject the result.** The original tool return value is passed through unchanged. The 8-script / 5-slide caps that actually stop the pipeline are in `ProductionTools` (`EnsureScripts`, `Take(MaxSlidesPerSegment)`, `SaveNarrationScripts` count check).
+**FunctionAsync** logs tool start/finish. The unused slide-count “trim” warning was removed; script and slide caps stay in `ProductionTools`.
 
 ## Prompt “guardrails” (not middleware)
 
@@ -127,4 +121,4 @@ Direct mode skips the first and last boxes and calls `ProductionTools` only.
 | `src/NarrationStudio/Agents/AgentFactory.cs` | Attaches middleware to every specialist |
 | `src/NarrationStudio/Memory/ProductionContextProvider.cs` | Prompt-level “Guardrails you must obey” |
 | `src/NarrationStudio/Tools/ProductionTools.cs` | Hard 8-script / 5-slide validation |
-| `src/NarrationStudio/Orchestration/DirectPipelineRunner.cs` | No guardrail middleware |
+| `src/NarrationStudio/Orchestration/DirectExecutor.cs` | No guardrail middleware |

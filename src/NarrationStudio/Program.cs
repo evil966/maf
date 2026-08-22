@@ -1,38 +1,80 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using NarrationStudio;
-using NarrationStudio.Agents;
 using NarrationStudio.Configuration;
-using NarrationStudio.Memory;
-using NarrationStudio.Orchestration;
-using NarrationStudio.Services;
-using NarrationStudio.Tools;
+using NarrationStudio.Hosting;
+using NarrationStudio.Service;
 
-var builder = Host.CreateApplicationBuilder(args);
-builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
-builder.Configuration.AddJsonFile(
-    Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-    optional: true,
-    reloadOnChange: true);
+var isCli = IsProductionCli(args);
 
-builder.Services.Configure<StudioOptions>(builder.Configuration.GetSection(StudioOptions.SectionName));
-builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection(OllamaOptions.SectionName));
-builder.Services.AddSingleton<PipelineStore>();
-builder.Services.AddSingleton<OllamaChatClientFactory>();
-builder.Services.AddSingleton<NarrationRewriteService>();
-builder.Services.AddSingleton<TranscriptSegmenter>();
-builder.Services.AddSingleton<SlidePlannerService>();
-builder.Services.AddSingleton<SlidePhraseRewriteService>();
-builder.Services.AddSingleton<SlideImageRenderer>();
-builder.Services.AddSingleton<TtsService>();
-builder.Services.AddSingleton<VideoComposerService>();
-builder.Services.AddSingleton<ProductionTools>();
-builder.Services.AddSingleton<ProductionContextProvider>();
-builder.Services.AddSingleton<AgentFactory>();
-builder.Services.AddSingleton<WorkflowHost>();
-builder.Services.AddSingleton<DirectPipelineRunner>();
-builder.Services.AddSingleton<ProductionApp>();
+if (isCli)
+{
+    var builder = Host.CreateApplicationBuilder(args);
+    AddJsonConfig(builder.Configuration);
+    builder.Services.AddNarrationStudioPipeline(builder.Configuration);
+    using var host = builder.Build();
+    using var scope = host.Services.CreateScope();
+    await scope.ServiceProvider.GetRequiredService<ProductionApp>().RunAsync(args);
+    return;
+}
 
-using var host = builder.Build();
-await host.Services.GetRequiredService<ProductionApp>().RunAsync(args);
+var web = WebApplication.CreateBuilder(args);
+AddJsonConfig(web.Configuration);
+web.Services.Configure<ServiceOptions>(web.Configuration.GetSection(ServiceOptions.SectionName));
+web.Services.AddNarrationStudioPipeline(web.Configuration);
+web.Services.AddSingleton<JobStore>();
+web.Services.AddSingleton<JobQueue>();
+web.Services.AddHttpClient(nameof(JobWorker));
+web.Services.AddHostedService<JobWorker>();
+
+var listenUrl = web.Configuration[$"{ServiceOptions.SectionName}:ListenUrl"];
+if (string.IsNullOrWhiteSpace(listenUrl))
+{
+    listenUrl = "http://0.0.0.0:5088";
+}
+
+web.WebHost.UseUrls(listenUrl);
+
+var app = web.Build();
+var serviceOptions = app.Services.GetRequiredService<IOptions<ServiceOptions>>().Value;
+if (string.IsNullOrWhiteSpace(serviceOptions.ApiKey))
+{
+    app.Logger.LogWarning("Service:ApiKey is empty. The job API accepts unauthenticated requests.");
+}
+
+app.UseMiddleware<ApiKeyMiddleware>();
+app.MapJobEndpoints();
+app.Logger.LogInformation("Narration Studio service listening on {Url}", listenUrl);
+await app.RunAsync();
+
+static void AddJsonConfig(ConfigurationManager configuration)
+{
+    configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+    configuration.AddJsonFile(
+        Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+        optional: true,
+        reloadOnChange: true);
+}
+
+static bool IsProductionCli(string[] args)
+{
+    if (args.Any(a => a.Equals("--service", StringComparison.OrdinalIgnoreCase)))
+    {
+        return false;
+    }
+
+    if (args.Any(a => a.Equals("--cli", StringComparison.OrdinalIgnoreCase)))
+    {
+        return true;
+    }
+
+    if (args.Any(a => a.StartsWith("--orchestration", StringComparison.OrdinalIgnoreCase)))
+    {
+        return true;
+    }
+
+    return args.Any(a => !a.StartsWith("--", StringComparison.Ordinal));
+}

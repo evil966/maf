@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/NarrationStudio/NarrationStudio.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/NarrationStudio.Tests/NarrationStudio.Tests.csproj" />
+  </Folder>
 </Solution>

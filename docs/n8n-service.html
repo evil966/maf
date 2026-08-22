@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Narration Studio — n8n service</title>
+<style>
+  :root {
+    --ink: #1a1d23;
+    --muted: #4a5160;
+    --accent: #0f1c2e;
+    --teal: #1b3a4b;
+    --gold: #c9a227;
+    --rule: #d7dde5;
+    --code: #f4f6f8;
+    --note: #eef4f8;
+    --warn: #f8f1e4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    color: var(--ink);
+    background: #fff;
+    font-family: "Segoe UI", Calibri, "Liberation Sans", sans-serif;
+    font-size: 10.6pt;
+    line-height: 1.48;
+  }
+  @page {
+    size: A4;
+    margin: 18mm 16mm 18mm 16mm;
+    @bottom-left {
+      content: "Narration Studio  ·  n8n service";
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @bottom-right {
+      content: counter(page);
+      font-size: 8pt;
+      color: #667085;
+      font-family: "Segoe UI", sans-serif;
+    }
+  }
+  @page :first {
+    margin: 0;
+    @bottom-left { content: none; }
+    @bottom-right { content: none; }
+  }
+  .cover {
+    min-height: 100vh;
+    padding: 32mm 22mm 22mm 22mm;
+    background: #0f1c2e;
+    color: #f4e9d0;
+    page-break-after: always;
+  }
+  .cover .kicker {
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    font-size: 10pt;
+    color: #c9a227;
+    margin-bottom: 18mm;
+  }
+  .cover h1 {
+    font-size: 26pt;
+    line-height: 1.15;
+    margin: 0 0 8mm 0;
+    border: 0;
+    color: #fff;
+  }
+  .cover .sub {
+    font-size: 13pt;
+    color: #9db4c0;
+    max-width: 150mm;
+  }
+  .cover .meta {
+    margin-top: 28mm;
+    font-size: 10pt;
+    color: #d7dde5;
+  }
+  .cover .meta div { margin: 3mm 0; }
+  .cover .bar {
+    width: 28mm;
+    height: 4px;
+    background: #c9a227;
+    margin: 10mm 0;
+  }
+  h1, h2, h3 {
+    font-family: "Segoe UI Semibold", "Segoe UI", sans-serif;
+    color: var(--accent);
+    page-break-after: avoid;
+  }
+  h1 {
+    font-size: 18pt;
+    border-bottom: 3px solid var(--gold);
+    padding-bottom: 3mm;
+    margin: 8mm 0 5mm 0;
+  }
+  h2 {
+    font-size: 13.5pt;
+    margin: 7mm 0 3mm 0;
+    padding-bottom: 1.5mm;
+    border-bottom: 1px solid var(--rule);
+  }
+  h3 { font-size: 11.5pt; margin: 5mm 0 2mm 0; color: var(--teal); }
+  p { margin: 0 0 3mm 0; }
+  ul, ol { margin: 0 0 3.5mm 1.5mm; padding-left: 5mm; }
+  li { margin-bottom: 1.2mm; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0 0 5mm 0;
+    font-size: 9.4pt;
+  }
+  th, td {
+    border: 1px solid #cfd6de;
+    padding: 2.1mm 2.4mm;
+    vertical-align: top;
+  }
+  th { background: #eef2f5; text-align: left; }
+  code, .mono {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.6pt;
+  }
+  pre {
+    background: var(--code);
+    border: 1px solid #d7dde5;
+    padding: 3mm 3.5mm;
+    font-family: Consolas, "Cascadia Mono", monospace;
+    font-size: 8.2pt;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    page-break-inside: avoid;
+    margin: 0 0 4mm 0;
+  }
+  .callout {
+    background: var(--note);
+    border-left: 4px solid var(--teal);
+    padding: 3mm 4mm;
+    margin: 0 0 4mm 0;
+  }
+  .callout.warn {
+    background: var(--warn);
+    border-left-color: var(--gold);
+  }
+  .callout .label {
+    font-weight: 700;
+    color: var(--teal);
+    margin-bottom: 1.5mm;
+    font-size: 9.5pt;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .callout.warn .label { color: #8a6a14; }
+  footer.doc-end { margin-top: 12mm; color: var(--muted); font-size: 9pt; }
+  .boxes { display: flex; flex-direction: column; gap: 2.2mm; margin: 0 0 4mm 0; }
+  .box {
+    border: 1px solid #9db4c0;
+    background: #fff;
+    padding: 2.2mm 3mm;
+    font-size: 9.4pt;
+  }
+  .box b { color: var(--teal); }
+  .arrow { text-align: center; color: var(--gold); font-weight: 700; letter-spacing: 0.2em; }
+</style>
+</head>
+<body>
+
+<section class="cover">
+  <div class="kicker">Operator and architecture note</div>
+  <h1>Exposing Narration Studio<br/>to n8n</h1>
+  <div class="bar"></div>
+  <p class="sub">What was built on 22 August 2026, the Docker Compose additions for the existing n8n stack, and how the Windows job API, custom node, and form workflow fit together.</p>
+  <div class="meta">
+    <div><b>Companion</b> &nbsp; docs/n8n-service.md &nbsp;·&nbsp; docs/NarrationStudio-Internal-Workings.pdf §19</div>
+    <div><b>Node package</b> &nbsp; n8n/n8n-nodes-narration-studio</div>
+    <div><b>Workflow</b> &nbsp; n8n/workflows/narration-studio-form.json</div>
+    <div><b>Date</b> &nbsp; 22 August 2026</div>
+    <div><b>Secrets</b> &nbsp; This PDF names keys and compose fields. It does not print passwords or API keys.</div>
+  </div>
+</section>
+
+<h1>1. What transpired</h1>
+<p>Narration Studio was a Windows console factory: transcript → rewritten talk → N scripts → slides → MP3s → segment MP4s → merged <code>video_{RunId}.mp4</code>. Microsoft Agent Framework (MAF) is the inner agent runtime. This repo’s <b>production harness</b> still owns I/O. All PNG / MP3 / MP4 writes go through <code>ProductionTools</code>.</p>
+<p>The request was to expose that factory as a <b>service for n8n</b>, with a <b>custom node</b> whose fields come from <code>src/NarrationStudio/appsettings.json</code>, and file browse for the transcript and stub narration (not typed Windows paths).</p>
+<p>n8n already runs in Docker on the same PC. The container cannot see <code>E:\…</code>. Studio must stay a Windows process so it can use ffmpeg, SAPI, and Ollama on <code>localhost:11434</code>. A full video run is longer than n8n’s HTTP timeout, so the API is async (<code>202</code> + <code>jobId</code>). Jobs run one at a time under <code>output/jobs/{jobId}/</code>. API keys stay off the public form.</p>
+
+<div class="boxes">
+  <div class="box"><b>n8n Form Trigger</b> — browser uploads + labeled defaults from appsettings.json</div>
+  <div class="arrow">▼</div>
+  <div class="box"><b>Custom node</b> — Start Job / Get Status / Wait / Download (n8n-nodes-narration-studio)</div>
+  <div class="arrow">▼</div>
+  <div class="box"><b>Windows Kestrel :5088</b> — POST /v1/jobs → JobQueue → JobWorker</div>
+  <div class="arrow">▼</div>
+  <div class="box"><b>ProductionHarness</b> — same loop as the CLI, scoped options overlay</div>
+  <div class="arrow">▼</div>
+  <div class="box"><b>ProductionTools</b> — only I/O surface; artifacts under output/jobs/{id}/</div>
+</div>
+
+<table>
+  <tr><th>Choice</th><th>Result</th></tr>
+  <tr><td>Where n8n runs</td><td>Existing Docker stack <code>n8n-api_icountera</code>. Studio is not containerized.</td></tr>
+  <tr><td>How Docker reaches Studio</td><td><code>http://host.docker.internal:5088</code></td></tr>
+  <tr><td>Browse file</td><td>Form upload → node embeds <code>transcriptText</code> / <code>stubNarrationText</code> → Studio writes job inputs</td></tr>
+  <tr><td>CLI vs service</td><td>Empty args (or <code>--service</code>) start Kestrel. <code>--orchestration</code> still runs the CLI and exits.</td></tr>
+  <tr><td>Community npm</td><td><b>Do not use</b> “Install community nodes” for this name. That hits the public registry, not this repo.</td></tr>
+</table>
+
+<h1>2. Docker Compose file (this PC)</h1>
+<p>Live file: <code>E:\icountera\n8n-api_icountera\n8n\docker-compose.yml</code>. Sanitized copy in this repo (ADDED lines commented): <code>n8n/docker-compose.n8n-excerpt.yml</code>. Do not paste <code>.env</code> passwords into tickets. Always compose with project name <code>n8n-api_icountera</code>.</p>
+
+<div class="callout warn">
+  <div class="label">Do not create a second stack</div>
+  <p><code>docker compose up</code> without <code>-p n8n-api_icountera</code> created another stack that collided on port 5678. That extra stack was torn down. Use the project flag every time.</p>
+</div>
+
+<h2>2.1 What was already there vs what was added</h2>
+<table>
+  <tr><th>Already on the stack</th><th>Added for Narration Studio</th></tr>
+  <tr><td><code>postgres:16</code>, volumes <code>n8n_data</code> / <code>postgres_data</code></td><td><code>N8N_CUSTOM_EXTENSIONS: /custom-nodes/n8n-nodes-narration-studio</code></td></tr>
+  <tr><td><code>docker.n8n.io/n8nio/n8n:latest</code> on port <b>5678</b></td><td><code>N8N_UNVERIFIED_PACKAGES_ENABLED: "true"</code></td></tr>
+  <tr><td>Postgres + <code>N8N_ENCRYPTION_KEY</code> from <code>.env</code></td><td><code>extra_hosts: host.docker.internal:host-gateway</code></td></tr>
+  <tr><td>Existing n8n env (host, webhook, runners, …)</td><td>Volume mount of this repo’s node package (read-only)</td></tr>
+  <tr><td></td><td>One-time <code>npm install</code> under <code>/home/node/.n8n/nodes</code></td></tr>
+</table>
+
+<h2>2.2 n8n service after the addition</h2>
+<pre>  n8n:
+    image: docker.n8n.io/n8nio/n8n:latest
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # … existing DB / encryption / host keys unchanged …
+      N8N_CUSTOM_EXTENSIONS: /custom-nodes/n8n-nodes-narration-studio   # ADDED
+      N8N_UNVERIFIED_PACKAGES_ENABLED: "true"                          # ADDED
+    extra_hosts:
+      - "host.docker.internal:host-gateway"                            # ADDED
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - E:/exercises/maf/n8n/n8n-nodes-narration-studio:/custom-nodes/n8n-nodes-narration-studio:ro  # ADDED
+    depends_on:
+      postgres:
+        condition: service_healthy</pre>
+<p>On another machine, change the left-hand volume path to that clone’s <code>n8n/n8n-nodes-narration-studio</code> folder.</p>
+
+<h2>2.3 Apply, install, restart</h2>
+<pre>cd E:\icountera\n8n-api_icountera\n8n
+docker compose -p n8n-api_icountera up -d
+docker compose -p n8n-api_icountera exec n8n sh -c "mkdir -p /home/node/.n8n/nodes &amp;&amp; cd /home/node/.n8n/nodes &amp;&amp; npm install /custom-nodes/n8n-nodes-narration-studio"
+docker compose -p n8n-api_icountera restart n8n</pre>
+
+<h2>2.4 Update the Narration Studio node</h2>
+<p>The volume is live (writable on Windows, read-only in the container). Edit <code>n8n/n8n-nodes-narration-studio/dist/</code> in this repo.</p>
+<table>
+  <tr><th>Change</th><th>What to run</th></tr>
+  <tr><td>JS / credentials / SVG only</td><td><code>docker compose -p n8n-api_icountera restart n8n</code> then <b>Ctrl+Shift+R</b></td></tr>
+  <tr><td><code>package.json</code> name / files / <code>n8n</code> block</td><td><code>npm install</code> again (same exec line), then restart + hard-refresh</td></tr>
+  <tr><td>Workflow JSON</td><td>Re-import <code>n8n/workflows/narration-studio-form.json</code></td></tr>
+</table>
+
+<h2>2.5 Add another custom node to the same compose</h2>
+<p>Each n8n package is its own folder with a <code>package.json</code> <code>n8n</code> key (same shape as <code>n8n-nodes-narration-studio</code>). This is an <b>n8n node</b>, not a MAF specialist — new Narration Studio agents still go in <code>src/NarrationStudio/Agents/</code> and <code>ProductionTools</code>.</p>
+<ol>
+  <li>Create <code>E:\exercises\maf\n8n\n8n-nodes-&lt;name&gt;\</code>.</li>
+  <li>Add a volume and append the path. In the Linux container, separate <code>N8N_CUSTOM_EXTENSIONS</code> folders with a <b>colon</b>:</li>
+</ol>
+<pre>      N8N_CUSTOM_EXTENSIONS: /custom-nodes/n8n-nodes-narration-studio:/custom-nodes/n8n-nodes-&lt;name&gt;
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - E:/exercises/maf/n8n/n8n-nodes-narration-studio:/custom-nodes/n8n-nodes-narration-studio:ro
+      - E:/exercises/maf/n8n/n8n-nodes-&lt;name&gt;:/custom-nodes/n8n-nodes-&lt;name&gt;:ro</pre>
+<pre>cd E:\icountera\n8n-api_icountera\n8n
+docker compose -p n8n-api_icountera up -d
+docker compose -p n8n-api_icountera exec n8n sh -c "cd /home/node/.n8n/nodes &amp;&amp; npm install /custom-nodes/n8n-nodes-&lt;name&gt;"
+docker compose -p n8n-api_icountera restart n8n</pre>
+<p>Hard-refresh n8n. Do <b>not</b> mount the whole <code>n8n/</code> folder as custom extensions — it also contains <code>workflows/</code> and this excerpt, which are not node packages.</p>
+
+<h2>2.6 What the stack is</h2>
+<table>
+  <tr><th>Item</th><th>Value</th></tr>
+  <tr><td>Compose project</td><td><code>n8n-api_icountera</code></td></tr>
+  <tr><td>Compose dir</td><td><code>E:\icountera\n8n-api_icountera\n8n</code></td></tr>
+  <tr><td>n8n UI</td><td><code>http://localhost:5678</code></td></tr>
+  <tr><td>Studio listen</td><td><code>http://0.0.0.0:5088</code> on Windows</td></tr>
+  <tr><td>From n8n → Studio</td><td><code>http://host.docker.internal:5088</code></td></tr>
+  <tr><td>Install location</td><td><code>/home/node/.n8n/nodes</code> (local npm install of the mounted folder)</td></tr>
+</table>
+<p>Allow port <b>5088</b> in Windows Firewall if the container cannot connect. Do not point Ollama at a URL inside the n8n container. Studio talks to Ollama on the Windows host.</p>
+
+<h1>3. Run the Windows job API</h1>
+<p>From the <b>repo root</b> (empty args — do not pass <code>--orchestration</code>):</p>
+<pre>cd E:\exercises\maf
+dotnet run --project src\NarrationStudio</pre>
+<p>Or F5 the <code>NarrationStudio</code> launch profile. Listen URL is <code>Service:ListenUrl</code> (<code>http://0.0.0.0:5088</code>). <code>dotnet run</code> binds the <b>bin</b> copy of <code>appsettings.json</code>.</p>
+<div class="callout warn">
+  <div class="label">One process only</div>
+  <p>A second <code>dotnet run</code> fails with MSB3027 because <code>NarrationStudio.exe</code> is locked. Stop the listener on port 5088 before rebuilding.</p>
+</div>
+<p>CLI production is unchanged:</p>
+<pre>dotnet run --project src\NarrationStudio -- --orchestration direct</pre>
+<p><code>Service:ApiKey</code> empty → unauthenticated API (warning in the log). Clients send <code>X-Api-Key</code> when set. How to mint and wire a key: §3.1.</p>
+
+<h2>3.1 Job API key (optional)</h2>
+<p>There is no generate-key endpoint. Mint a random string, store the <b>same</b> value on Studio and in the n8n credential, then restart the service. The custom node’s credentials stay optional until you set a key. <code>/health</code> never requires it. Other routes then need header <code>X-Api-Key</code>. A mismatch is <b>401</b>.</p>
+<p><b>1. Create a secret</b> (PowerShell):</p>
+<pre>[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }) -as [byte[]])</pre>
+<p>A GUID is enough for local use: <code>[guid]::NewGuid().ToString("N")</code>.</p>
+<p><b>2. Put it on Studio.</b> <code>dotnet run</code> binds the <b>bin</b> copy <code>src/NarrationStudio/bin/Debug/net10.0-windows/appsettings.json</code>:</p>
+<pre>"Service": {
+  "ListenUrl": "http://0.0.0.0:5088",
+  "ApiKey": "paste-the-secret-here"
+}</pre>
+<p>Prefer not committing it. Keep source <code>ApiKey</code> empty and set an environment variable before <code>dotnet run</code>:</p>
+<pre>$env:Service__ApiKey = "paste-the-secret-here"</pre>
+<p>Stop and start Studio so the new value loads.</p>
+<p><b>3. Put it on n8n.</b> This is only n8n storing a secret and attaching it to the three Studio nodes. It is not a form field.</p>
+<p>A <b>Narration Studio API</b> credential is one vault record:</p>
+<table>
+  <tr><th>Field on the credential</th><th>What it is</th><th>What Studio does with it</th></tr>
+  <tr><td><b>Base URL</b></td><td>Where Docker n8n calls Windows</td><td>Default <code>http://host.docker.internal:5088</code> — the host’s port 5088, not <code>localhost</code> inside the container</td></tr>
+  <tr><td><b>API Key</b></td><td>Same string as <code>Service:ApiKey</code></td><td>HTTP header <code>X-Api-Key</code> on job calls. Not required for <code>/health</code></td></tr>
+  <tr><td><b>ElevenLabs / OpenAI / Azure API Key</b></td><td>Vendor keys</td><td>Other headers (<code>X-ElevenLabs-Api-Key</code>, …). <b>Not</b> <code>Service:ApiKey</code></td></tr>
+</table>
+<p>Create it: n8n → <b>Credentials</b> → <b>Add credential</b> → search <b>Narration Studio API</b> (from the mounted custom node, not public npm). Set Base URL to <code>http://host.docker.internal:5088</code>. Set <b>API Key</b> to the exact Studio string (no extra space or quotes). Leave vendor keys blank unless you want those headers. Save. <b>Test</b> hits <code>GET /health</code> and only proves the URL is reachable, not that the job key is correct.</p>
+<p>Attach it on all three nodes that call Studio. The sample workflow is Form → <b>Start job</b> → <b>Wait until complete</b> → <b>Download merged video</b>. Open each of those last three, set <b>Credential</b> to the record you saved, and save the workflow. If only Start job has it, Wait/Download get <b>401</b>. <b>On form submission</b> does not get this credential.</p>
+<p>On each request the node uses the credential Base URL (or falls back to <code>http://host.docker.internal:5088</code>) and, if <b>API Key</b> is non-empty, sends <code>X-Api-Key</code>. Studio compares that header to <code>Service:ApiKey</code> with an exact match. Empty Studio key → any request is allowed. Set Studio key + missing/wrong header → <b>401</b> <code>{ "error": "Missing or invalid X-Api-Key." }</code>.</p>
+<p>Do not put <code>Service:ApiKey</code> on the Form Trigger. That URL is shareable; the job key is a server-to-server secret (n8n encrypts credentials with <code>N8N_ENCRYPTION_KEY</code>). Segment count, Ollama model, voice id stay on the form.</p>
+<p>Putting an ElevenLabs key in <b>API Key</b> will not unlock TTS, and will 401 the job API if it does not match <code>Service:ApiKey</code>. After you change the Studio key, restart <code>dotnet run</code> and update the n8n credential. You do not need to re-import the workflow unless a node still has no credential selected.</p>
+
+<h1>4. Job API</h1>
+<table>
+  <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
+  <tr><td>GET</td><td><code>/health</code></td><td>No API key</td></tr>
+  <tr><td>POST</td><td><code>/v1/jobs</code></td><td>JSON or multipart. Returns <b>202</b> <code>{ jobId, status: queued }</code></td></tr>
+  <tr><td>GET</td><td><code>/v1/jobs/{id}</code></td><td><code>queued</code> / <code>running</code> / <code>complete</code> / <code>failed</code></td></tr>
+  <tr><td>GET</td><td><code>/v1/jobs/{id}/events</code></td><td><code>events.jsonl</code> lines</td></tr>
+  <tr><td>GET</td><td><code>/v1/jobs/{id}/artifacts/merged</code></td><td>MP4 download</td></tr>
+</table>
+<p>Optional create headers (never form fields): <code>X-ElevenLabs-Api-Key</code>, <code>X-OpenAI-Api-Key</code>, <code>X-Azure-OpenAI-Api-Key</code>.</p>
+<p>JSON may send booleans and ints as strings (<code>"true"</code>, <code>"8"</code>). <code>undefined</code> / <code>null</code> strings are ignored. Bad JSON is <b>400</b>, not 500. Files may arrive as <code>transcriptText</code> / <code>stubNarrationText</code>, or as multipart names <code>transcript</code>, <code>Transcript_file</code>, <code>stubNarration</code>, <code>Stub_narration_file</code>, <code>Dub_narration_file</code>.</p>
+<p>Host fallbacks: <code>voice_transcript.txt</code> and <code>voice_transcript_ollama.txt</code> at the repo root when no upload is sent.</p>
+<pre>curl http://localhost:5088/health
+curl -X POST http://localhost:5088/v1/jobs -H "Content-Type: application/json" ^
+  -d "{\"orchestration\":\"direct\",\"useStubNarration\":true,\"transcriptText\":\"hello\",\"stubNarrationText\":\"hello stub\"}"</pre>
+
+<h1>5. Custom node and form</h1>
+<p>Package <code>n8n/n8n-nodes-narration-studio</code> is shipped as JS in <code>dist/</code> (no TypeScript build). Node versions 2 and 3 share the same code. Operations: <b>Start Job</b>, <b>Get Status</b>, <b>Wait Until Complete</b>, <b>Download Merged Video</b>.</p>
+<p>Credentials (<b>Narration Studio API</b>) are optional. Default base URL is <code>http://host.docker.internal:5088</code>. Put ElevenLabs / OpenAI / Azure <b>keys</b> on the credential, not the form.</p>
+<p>Workflow <code>n8n/workflows/narration-studio-form.json</code>: Form Trigger → Start job → Wait until complete → Download merged video. Every field has a label and a hint with the config key. Defaults match <code>appsettings.json</code>. File fields cannot be pre-filled.</p>
+<p><b>On the form:</b> title, orchestration, stub flags, transcript and stub uploads, Model endpoint/model/timeout, segment/slide/talk caps, OpenAI/Azure model names, ElevenLabs voice/model ids, video size, rewrite extra instructions, keep artifacts.</p>
+<p><b>Not on the form:</b> API keys; <code>OutputDirectory</code> (always <code>output/jobs/{id}</code>).</p>
+<p>Form Trigger names binaries after the field <b>label</b> (<code>Transcript_file</code>, <code>Stub_narration_file</code>). The node accepts those aliases.</p>
+
+<h1>6. What went wrong</h1>
+<ol>
+  <li><b>Public npm install</b> — n8n’s “Install community nodes” dialog does not see this repo. Use the compose mount + local <code>npm install</code> in §2.</li>
+  <li><b>“Node does not have any credentials set”</b> — credentials were made optional.</li>
+  <li><b>Start job 500</b> — n8n sent <code>"useStubNarration": "true"</code> (string). Studio now accepts string bools/ints and embeds file text. Parse failures return 400.</li>
+  <li><b>MSB3027 file lock</b> — two <code>dotnet run</code> instances. Stop port 5088 first.</li>
+</ol>
+
+<footer class="doc-end">
+  End of document. 22 August 2026. If the code and this PDF diverge, the code wins. Markdown twin: docs/n8n-service.md.
+</footer>
+
+</body>
+</html>

@@ -121,7 +121,7 @@ public sealed class PipelineStore
                 ? (Options.UseStubNarration
                     ? "copy voice_transcript_ollama.txt into the rewritten narration"
                     : "rephrase the raw transcript into a 7-minute executive talk via Ollama") :
-              scripts < Options.SegmentCount ? "segment the rewritten narration into 8 scripts" :
+              scripts < Options.SegmentCount ? $"segment the rewritten narration into {Options.SegmentCount} scripts" :
               audio < Options.SegmentCount ? "synthesize remaining MP3 files" :
               slides < Options.SegmentCount ? "plan remaining slide phrases" :
               images < state.Segments.Sum(s => Math.Max(1, s.Slides.Count)) ? "render remaining slide images" :
@@ -148,15 +148,15 @@ public sealed class PipelineStore
         WriteMemorySnapshotUnlocked();
     }
 
-    public void WriteRunHeader(string orchestration, string ttsProvider, bool stubNarration)
+    public void WriteRunHeader(string orchestration, string ttsProvider, bool stubNarration, string? jobTitle = null)
     {
         lock (_gate)
         {
-            WriteRunHeaderUnlocked(orchestration, ttsProvider, stubNarration);
+            WriteRunHeaderUnlocked(orchestration, ttsProvider, stubNarration, jobTitle);
         }
     }
 
-    private void WriteRunHeaderUnlocked(string orchestration, string ttsProvider = "", bool? stubNarration = null)
+    private void WriteRunHeaderUnlocked(string orchestration, string ttsProvider = "", bool? stubNarration = null, string? jobTitle = null)
     {
         if (string.IsNullOrWhiteSpace(_state.OutputDirectory))
         {
@@ -171,6 +171,7 @@ public sealed class PipelineStore
             Path.Combine(AgentMemoryDirectory, "run.txt"),
             $"""
             RunId        : {_state.RunId}
+            Title        : {(string.IsNullOrWhiteSpace(jobTitle) ? "(none)" : jobTitle)}
             StartedAt    : {_state.StartedAt:o}
             Orchestration: {orchestration}
             StubNarration: {stub}

@@ -1,0 +1,31 @@
+{
+  "name": "n8n-nodes-narration-studio",
+  "version": "0.1.0",
+  "description": "n8n node for the Narration Studio Windows job API",
+  "keywords": ["n8n-community-node-package", "narration-studio"],
+  "license": "MIT",
+  "homepage": "https://github.com",
+  "author": {
+    "name": "Narration Studio"
+  },
+  "main": "index.js",
+  "scripts": {
+    "lint": "echo \"no lint\""
+  },
+  "files": [
+    "dist",
+    "index.js"
+  ],
+  "n8n": {
+    "n8nNodesApiVersion": 1,
+    "credentials": [
+      "dist/credentials/NarrationStudioApi.credentials.js"
+    ],
+    "nodes": [
+      "dist/nodes/NarrationStudio/NarrationStudio.node.js"
+    ]
+  },
+  "peerDependencies": {
+    "n8n-workflow": "*"
+  }
+}

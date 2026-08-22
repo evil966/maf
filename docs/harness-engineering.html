@@ -110,158 +110,80 @@
 <body>
 
 <h1>Is Narration Studio harness-engineered?</h1>
-<p class="lede">Whether this repository is “harness engineered,” measured against the actual code, and what to do next so a later update can fully adopt harness engineering without a rewrite.</p>
+<p class="lede">Narration Studio as a harness-centric MAF application: explicit production harness, tools as the only I/O surface, MAF agents as optional drivers.</p>
 <div class="callout"><b>Confirmed</b> means the behavior is in this repository’s source. <b>Inferred</b> means it comes from Microsoft Agent Framework (MAF) or from the industry definition of an agent harness.</div>
 
 <h2>Verdict</h2>
-<p><b>Partially.</b> Narration Studio has an agent harness for <i>producing videos</i>. It is not harness-engineered as a <i>coding-agent</i> repository.</p>
-<p>There is no <code>AGENTS.md</code>, Cursor rules, skills, test project, or CI that an IDE agent could use to check its own work. The word “harness” never appears in the source.</p>
-<p>What <i>is</i> here is a production harness around the model: the LLM does not own the work. The loop, tools, context, and controls do.</p>
+<p><b>Yes, for the video factory.</b> The outer production harness is explicit: <code>ProductionHarness</code> owns the run, <code>ProductionTools</code> is the only I/O surface, <code>HarnessChecks</code> can fail the process if artifacts are wrong, and <code>events.jsonl</code> records tool calls. MAF handoff/sequential remain optional drivers. Default CLI is still <code>handoff</code>. Direct (<code>DirectExecutor</code>) is the reference executor and the failover path.</p>
+<p>The coding-agent outer harness is present in thin form: root <code>AGENTS.md</code>, <code>.cursor/rules/studio-harness.mdc</code>, and <code>tests/NarrationStudio.Tests</code>.</p>
 
 <h2>What “harness” means here</h2>
-<p>An agent harness is the scaffold around a model: the loop that keeps calling it, the tools it may invoke, the context injected into prompts, and the controls that stop unsafe or incomplete work. Claude Code, Cursor, and Codex are harnesses in that sense. Microsoft Agent Framework is a <b>Harness-as-a-Service</b> library (<b>inferred</b>): this repo customizes it rather than writing its own chat-tool loop.</p>
-<p>A common inclusion test (<b>inferred</b>, not a type in this repo) is four pieces:</p>
+<p>An agent harness is the scaffold around a model: the loop, tools, context, and controls. MAF is <b>Harness-as-a-Service</b> (<b>inferred</b>): this app customizes it rather than writing its own chat-tool loop.</p>
 <table>
-  <tr><th>Piece</th><th>Question</th></tr>
-  <tr><td>Loop</td><td>Does something keep the model turning until a stop condition?</td></tr>
-  <tr><td>Tools</td><td>Can the model only act through a defined interface?</td></tr>
-  <tr><td>Context</td><td>Is live task state injected, not just a static system prompt?</td></tr>
-  <tr><td>Control</td><td>Can the run be limited, filtered, or failed over without trusting the model?</td></tr>
+  <tr><th>Piece</th><th>In this app now</th></tr>
+  <tr><td>Loop</td><td><code>ProductionHarness</code> → MAF <code>WorkflowHost</code> or <code>DirectExecutor</code></td></tr>
+  <tr><td>Tools</td><td><code>ProductionTools</code> only; events via <code>HarnessEvents</code></td></tr>
+  <tr><td>Context</td><td><code>ProductionContextProvider</code> + timestamped snapshots; option-driven names</td></tr>
+  <tr><td>Control</td><td>Mutex, tool throws, MAF chat guardrails, failover to direct, <code>HarnessChecks</code>, cancellation via <code>ApplicationStopping</code></td></tr>
 </table>
 
-<h2>Production harness (present)</h2>
-
+<h2>Production harness (current)</h2>
 <h3>Loop</h3>
-<p><code>WorkflowHost</code> builds MAF <b>handoff</b> or <b>sequential</b> graphs. Handoff uses a coordinator with autonomous mode, <code>turnLimit: 8</code>, and a continuation prompt that says to call <code>GetPipelineStatus</code> and stop when the merged video exists. Sequential runs specialists in a fixed order.</p>
-<p><b>Confirmed:</b> if agents finish without a merged file, <code>ProductionApp</code> falls through to <code>DirectPipelineRunner</code>. Direct mode is itself a loop: a fixed list of tool calls, no LLM routing.</p>
-<p>Default CLI mode is <code>handoff</code>. Passing <code>--orchestration direct</code> skips MAF entirely.</p>
+<p><code>ProductionApp</code> is a thin CLI (mutex, paths, <code>--orchestration</code>, banner including <code>Harness : MAF+tools</code>). <code>ProductionHarness.RunAsync</code> copies stub narration if configured, then runs MAF or <code>DirectExecutor</code>, failsover if the merged file is missing, then <code>HarnessChecks.Verify()</code>.</p>
+<p>Default CLI mode is <code>handoff</code>. <code>--orchestration direct</code> skips MAF.</p>
 
 <h3>Tools</h3>
-<p><code>ProductionTools</code> is the real pipeline. Agents receive <code>AIFunction</code> wrappers of the same methods that direct mode calls. Specialists do not write PNGs, MP3s, or MP4s themselves; they call tools that do.</p>
-<p>That is the load-bearing harness pattern in this repo: <b>tools are the product; agents are optional drivers.</b></p>
+<p><code>ProductionTools</code> writes every PNG, MP3, and MP4. Agents get <code>AIFunction</code> wrappers of the same methods. New stages must be new tool methods.</p>
+<p>Each public tool call appends a JSONL line to <code>output/agent-file-memory/production-notes-{RunId}/events.jsonl</code> (<code>name</code>, <code>elapsedMs</code>, <code>ok</code>, <code>error</code>).</p>
+<p>Ollama, TTS, and ffmpeg take <code>ApplicationStopping</code>. <code>Studio:UseStubSlidePhrases</code> skips per-slide Ollama (independent of <code>UseStubNarration</code>).</p>
 
 <h3>Context</h3>
-<p>Every specialist in <code>AgentFactory.TryCreate</code> gets two <code>AIContextProvider</code>s:</p>
-<ol>
-  <li><code>ProductionContextProvider</code> — injects <code>PipelineStore.SummarizeForAgent()</code> plus naming/cap instructions before a turn; appends truncated assistant text to <code>PipelineState.Notes</code> afterward (audit log, not retrieval).</li>
-  <li>MAF <code>FileMemoryProvider</code> — store under <code>output/agent-file-memory/production-notes-{RunId}</code>. Constructed only in <code>TryCreate</code>, so <b>direct mode never starts it</b>.</li>
-</ol>
-<p>Independently, <code>PipelineStore</code> writes <code>run.txt</code>, <code>pipeline-status.txt</code>, and <code>notes.txt</code> into that timestamped folder on every persist, including direct mode. Older <code>production-notes-*</code> folders are kept. See <code>docs/memory-vs-mem0.md</code>.</p>
+<p>Specialists still get <code>ProductionContextProvider</code> plus MAF <code>FileMemoryProvider</code> (agent modes only). Caps and file-name ranges interpolate <code>StudioOptions</code> (<code>StudioNaming</code>). See <code>docs/memory-vs-mem0.md</code>.</p>
 
 <h3>Control</h3>
 <table>
-  <tr><th>Control</th><th>Where</th><th>What it actually does</th></tr>
-  <tr><td>Named mutex <code>NarrationStudio.Production</code></td><td><code>ProductionApp</code></td><td>One run at a time</td></tr>
-  <tr><td>Guardrail middleware</td><td><code>ProductionGuardrails</code> on each MAF agent</td><td>Blocked-term short-circuit; email/phone redaction on chat messages; tool start/finish logs</td></tr>
-  <tr><td>Prompt “Guardrails you must obey”</td><td><code>ProductionContextProvider</code></td><td>Advisory text only</td></tr>
-  <tr><td>Hard 8-script / 5-slide caps</td><td><code>ProductionTools</code> throws / <code>Take()</code></td><td>Enforced whether or not agents run</td></tr>
-  <tr><td>Failover to direct</td><td><code>ProductionApp</code></td><td>Completes remaining tools if merge is missing</td></tr>
-  <tr><td>Wipe media on start</td><td><code>PipelineStore.Initialize</code></td><td>Prevents stitching old audio/video onto a new talk</td></tr>
+  <tr><th>Control</th><th>Where</th></tr>
+  <tr><td>Mutex</td><td><code>ProductionApp</code></td></tr>
+  <tr><td>Chat blocked terms / PII redact</td><td><code>ProductionGuardrails</code> (MAF only)</td></tr>
+  <tr><td>Script/slide caps</td><td><code>ProductionTools</code> throws / <code>Take()</code> — all modes</td></tr>
+  <tr><td>Failover to direct</td><td><code>ProductionHarness</code></td></tr>
+  <tr><td>Post-run artifact check</td><td><code>HarnessChecks</code> — fails the process if not <code>complete</code> with files on disk</td></tr>
+  <tr><td>Wipe media on start</td><td><code>PipelineStore.Initialize</code></td></tr>
 </table>
-<p>Guardrails wrap agents only. Direct mode does not run <code>ProductionGuardrails</code>. The slide-count “trim” log does <b>not</b> change the tool result. Fuller write-up: <code>docs/guardrails.md</code>.</p>
+<p>The unused slide-count “trim” log was removed. Chat guardrails still do not wrap <code>DirectExecutor</code>.</p>
 
-<h2>Coding-agent outer harness (absent)</h2>
-<p>Harness engineering for <i>Cursor / Codex / Claude Code</i> usually means repo-owned assets the coding agent can follow and verify: <code>AGENTS.md</code>, rules, skills, linters, tests, CI.</p>
-<p>This repository has none of those. A coding agent working on Narration Studio is steered by chat and by reading the C# — not by a checked-in outer harness.</p>
-
-<h2>What is missing if you mean a complete harness</h2>
+<h2>Coding-agent outer harness</h2>
 <ul>
-  <li>No evals or tests the agent (or a developer) can run to self-verify a run.</li>
-  <li>Guardrails do not apply in direct mode; slide-count middleware only logs.</li>
-  <li>Slide-sentence Ollama and TTS pass <code>CancellationToken.None</code>; Host stop is wired into <code>WorkflowHost</code> only.</li>
-  <li>Memory is a status snapshot plus files, not fact extraction or similarity search.</li>
-  <li>Several agent prompts still hardcode “8” even if <code>Studio:SegmentCount</code> changes.</li>
-  <li><code>UseStubNarration</code> skips the 7-minute Ollama rewrite but <b>not</b> per-slide Ollama sentences.</li>
+  <li><code>AGENTS.md</code> — cwd, commands, tools own I/O, do not hardcode 8</li>
+  <li><code>.cursor/rules/studio-harness.mdc</code></li>
+  <li><code>dotnet test</code> — <code>tests/NarrationStudio.Tests</code></li>
 </ul>
 
-<h2>How the two modes use the harness</h2>
-<pre>handoff / sequential
-    → AgentFactory.TryCreate
-        → tools + context providers + FileMemoryProvider + guardrail middleware
-    → WorkflowHost loop
-    → if no merged MP4 → DirectPipelineRunner (same tools, no MAF)
+<h2>How modes use the harness</h2>
+<pre>ProductionApp (CLI + banner)
+    → ProductionHarness
+        → (optional stub narration copy)
+        → handoff/sequential: WorkflowHost
+              → if no merged MP4 → DirectExecutor
+        → or direct / TryCreate fail → DirectExecutor
+        → HarnessChecks.Verify  (throw if artifacts wrong)</pre>
+<p>The durable contract is <code>ProductionTools</code> + <code>DirectExecutor</code> + <code>HarnessChecks</code>. MAF is the inner runtime.</p>
 
-direct (or TryCreate fails)
-    → DirectPipelineRunner
-        → ProductionTools in order
-        → PipelineStore snapshots still written
-        → no FileMemoryProvider, no ProductionGuardrails</pre>
-<p>The durable contract is <code>ProductionTools</code> plus <code>DirectPipelineRunner</code>, not the LLM graph.</p>
-
-<h2>What should be done to fully embrace harness engineering</h2>
-<p>This app can be prepared <b>without a rewrite</b>. The durable piece is already the right one: <code>ProductionTools</code> owns I/O; agents only drive it. Full harness engineering here means tightening that contract so a later model, workflow, or IDE agent can change without the factory changing.</p>
-<p>Treat two layers separately. Mixing them is how harness work turns into a mess.</p>
-
-<h3>Production harness (the video factory)</h3>
-<p>This is what “fully embraced” should mean for Narration Studio.</p>
-<p>Already in place: tool interface, handoff/sequential loop, failover to <code>DirectPipelineRunner</code>, pipeline-state context, mutex, wipe-and-regenerate media.</p>
-<p>Still needed:</p>
-<table>
-  <tr><th>Gap</th><th>Why it matters</th><th>Prepare now</th></tr>
-  <tr><td>Caps live in prompts as “8” / <code>audio-01..08</code></td><td>Changing <code>SegmentCount</code> lies to the model</td><td>Generate agent instructions and tool <code>[Description]</code>s from <code>StudioOptions</code></td></tr>
-  <tr><td>Direct mode bypasses guardrails</td><td>Two control planes</td><td>Put policy in tools (already true for 8/5). Keep middleware as chat-only, or run the same validator on tool entry in every mode</td></tr>
-  <tr><td>Slide “trim” only logs</td><td>Control that does not control</td><td>Either enforce (truncate/reject) or delete the warning</td></tr>
-  <tr><td><code>CancellationToken.None</code> on Ollama/TTS</td><td>Host stop cannot halt the expensive stages</td><td>Thread <code>ApplicationStopping</code> through <code>ProductionTools</code> now, even if behavior is otherwise unchanged</td></tr>
-  <tr><td>No machine check that a run is “done”</td><td>Harness without a sensor</td><td>Add one eval: given a fixture transcript, assert 8 scripts, ≤5 slides, 8 mp3s, merged mp4 exists, <code>pipeline-state.json</code> status <code>complete</code></td></tr>
-  <tr><td>No traces</td><td>You cannot improve the harness from failures</td><td>Write a JSONL event log per run (tool name, duration, success/fail) next to <code>production-notes-{RunId}</code></td></tr>
-  <tr><td>Slide Ollama has no flag</td><td>Stubbing looks like “no LLM” but slides still need Ollama</td><td>Add <code>UseStubSlidePhrases</code> (or similar) so LLM stages are explicit and skippable</td></tr>
-  <tr><td>Memory is snapshot-only</td><td>Fine for a factory; do not pretend it is mem0</td><td>Keep snapshots. If you later want retrieval, add it <i>beside</i> <code>PipelineStore</code>, not inside it</td></tr>
-</table>
-<p>The stop condition should be <b>files on disk</b>, not the coordinator’s last sentence. That is already how failover works; make it the official definition of success.</p>
-
-<h3>Coding-agent outer harness (Cursor / Codex working on this repo)</h3>
-<p>This is optional unless humans will keep changing the app with agents.</p>
-<p>Prepare with cheap, portable files:</p>
-<ul>
-  <li><code>AGENTS.md</code> — working directory is repo root, <code>dotnet run --project src\NarrationStudio -- --orchestration direct</code>, do not commit <code>appsettings</code> secrets, tools not prompts own the pipeline</li>
-  <li>A few Cursor rules that point at <code>ProductionTools</code> / <code>PipelineStore</code> / “do not hardcode 8”</li>
-  <li>A <code>dotnet test</code> project with the eval above so an agent can self-verify</li>
-  <li>No CI is required to <i>prepare</i>; a test the agent can run is</li>
-</ul>
-<p>Do not wait on skills/MCP. Those are later multipliers.</p>
-
-<h2>Can it be prepared without updating the product yet?</h2>
-<p>Yes. The preparation is structural, not a new video feature.</p>
-<p><b>Do now</b> (low risk, high leverage):</p>
-<ol>
-  <li>Freeze the tool contract. <code>ProductionTools</code> remains the only way to touch disk/APIs. New stages (music, captions) are new methods, not agent-side file writes.</li>
-  <li>Drive all “8 / 5 / 7 minutes” from options. Prompts, handoff text, and file-name examples interpolate <code>SegmentCount</code> / <code>MaxSlidesPerSegment</code>.</li>
-  <li>Pass a cancellation token through rewrite, slide sentences, TTS, and ffmpeg.</li>
-  <li>Define success as artifacts. One <code>HarnessChecks</code> (or test) that inspects <code>output/</code> after a fixture run.</li>
-  <li>Structured run events in the timestamped memory folder (that folder is already created every run).</li>
-  <li><code>AGENTS.md</code> plus the existing companion PDFs so a coding agent inherits the same mental model.</li>
-</ol>
-<p><b>Defer until you actually update:</b></p>
-<ul>
-  <li>Real eval suite / golden PNG hashes</li>
-  <li>mem0-style retrieval</li>
-  <li>Guardrails on direct mode (only if untrusted input will hit that path)</li>
-  <li>Parallel TTS/slides</li>
-  <li>Harness-as-a-Service swap (keep MAF; do not rewrite the loop until the tool+eval layer is stable)</li>
-</ul>
-
-<h2>What “fully embraced” looks like later</h2>
-<pre>fixture transcript
-    → DirectPipelineRunner or handoff
-    → ProductionTools only
-    → events.jsonl + pipeline-state.json + production-notes-{RunId}
-    → HarnessChecks: 8/5/merged/status
-    → fail the process if checks fail (even if the model said “Done”)</pre>
-<p>Agents become interchangeable. Direct mode stays the reference implementation. That is the whole point of harness engineering for this app.</p>
-<p>Do not invert the current shape (do not let specialists write files). The scaffold a later update would hang on is: <code>AGENTS.md</code> + option-driven prompts + a single post-run check.</p>
-<p>The option of going further — critic, resume, human approve, traces, recovery — is a <b>product</b> change, not only a harness change. See <code>docs/agentic-system.md</code>.</p>
+<h2>Remaining (not this refactor)</h2>
+<p>Resume-without-wipe, critic agent, <code>--approve</code> before TTS, mem0, parallel TTS, swapping MAF. See <code>docs/agentic-system.md</code>.</p>
 
 <h2>Key files</h2>
 <table>
   <tr><th>File</th><th>Role</th></tr>
-  <tr><td><code>src/NarrationStudio/ProductionApp.cs</code></td><td>Mode selection, mutex, stub-before-agents, failover to direct</td></tr>
-  <tr><td><code>src/NarrationStudio/Orchestration/DirectPipelineRunner.cs</code></td><td>Deterministic tool loop</td></tr>
-  <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Shared tool interface; hard caps</td></tr>
-  <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Crew, tools, context, file memory, guardrails</td></tr>
-  <tr><td><code>src/NarrationStudio/Agents/WorkflowHost.cs</code></td><td>Handoff / sequential loop</td></tr>
-  <tr><td><code>src/NarrationStudio/Memory/ProductionContextProvider.cs</code></td><td>Injected status + prompt policy</td></tr>
-  <tr><td><code>src/NarrationStudio/Guardrails/ProductionGuardrails.cs</code></td><td>Agent-only message filter</td></tr>
-  <tr><td><code>src/NarrationStudio/Services/PipelineStore.cs</code></td><td>Run state, wipe policy, memory snapshots</td></tr>
+  <tr><td><code>src/NarrationStudio/Harness/ProductionHarness.cs</code></td><td>Run policy, failover, checks</td></tr>
+  <tr><td><code>src/NarrationStudio/Harness/HarnessChecks.cs</code></td><td>Artifact success predicate</td></tr>
+  <tr><td><code>src/NarrationStudio/Harness/HarnessEvents.cs</code></td><td><code>events.jsonl</code></td></tr>
+  <tr><td><code>src/NarrationStudio/ProductionApp.cs</code></td><td>CLI, mutex, banner</td></tr>
+  <tr><td><code>src/NarrationStudio/Orchestration/DirectExecutor.cs</code></td><td>No-agent tool loop</td></tr>
+  <tr><td><code>src/NarrationStudio/Tools/ProductionTools.cs</code></td><td>Shared I/O; cancellation; events</td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/AgentFactory.cs</code></td><td>Option-driven crew prompts</td></tr>
+  <tr><td><code>src/NarrationStudio/Agents/WorkflowHost.cs</code></td><td>Handoff / sequential</td></tr>
+  <tr><td><code>AGENTS.md</code></td><td>Coding-agent outer harness</td></tr>
 </table>
 
 </body>

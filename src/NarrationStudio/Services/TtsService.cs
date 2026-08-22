@@ -48,7 +48,7 @@ public sealed class TtsService
                 GenerateToneBed(script, wavPath);
             }
 
-            FfmpegProcess.Run(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-qscale:a", "4", mp3Path]);
+            FfmpegProcess.Run(["-y", "-i", wavPath, "-codec:a", "libmp3lame", "-qscale:a", "4", mp3Path], cancellationToken);
             TryDelete(wavPath);
         }
 
@@ -124,14 +124,14 @@ public sealed class TtsService
         WaveFileWriter.CreateWaveFile16(wavPath, sine);
     }
 
-    public static double ProbeDurationSeconds(string mediaPath)
+    public static double ProbeDurationSeconds(string mediaPath, CancellationToken cancellationToken = default)
     {
         var output = FfmpegProcess.RunProbe([
             "-v", "error",
             "-show_entries", "format=duration",
             "-of", "default=noprint_wrappers=1:nokey=1",
             mediaPath
-        ]);
+        ], cancellationToken);
 
         return double.TryParse(output.Trim(), out var seconds) ? seconds : 5;
     }
@@ -154,17 +154,17 @@ public sealed class TtsService
 
 public static class FfmpegProcess
 {
-    public static void Run(IReadOnlyList<string> args)
+    public static void Run(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
     {
-        RunInternal("ffmpeg", args, capture: false);
+        RunInternal("ffmpeg", args, capture: false, cancellationToken);
     }
 
-    public static string RunProbe(IReadOnlyList<string> args)
+    public static string RunProbe(IReadOnlyList<string> args, CancellationToken cancellationToken = default)
     {
-        return RunInternal("ffprobe", args, capture: true);
+        return RunInternal("ffprobe", args, capture: true, cancellationToken);
     }
 
-    private static string RunInternal(string fileName, IReadOnlyList<string> args, bool capture)
+    private static string RunInternal(string fileName, IReadOnlyList<string> args, bool capture, CancellationToken cancellationToken)
     {
         var start = new ProcessStartInfo
         {
@@ -180,20 +180,22 @@ public static class FfmpegProcess
         }
 
         using var process = Process.Start(start) ?? throw new InvalidOperationException($"Failed to start {fileName}.");
-        var stdoutTask = process.StandardOutput.ReadToEndAsync();
-        var stderrTask = process.StandardError.ReadToEndAsync();
-        if (!process.WaitForExit(8 * 60 * 1000))
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
+        var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
+        var deadline = DateTime.UtcNow.AddMinutes(8);
+        while (!process.WaitForExit(250))
         {
-            try
+            if (cancellationToken.IsCancellationRequested)
             {
-                process.Kill(entireProcessTree: true);
-            }
-            catch
-            {
-                // best effort
+                TryKill(process);
+                cancellationToken.ThrowIfCancellationRequested();
             }
 
-            throw new TimeoutException($"{fileName} timed out.");
+            if (DateTime.UtcNow >= deadline)
+            {
+                TryKill(process);
+                throw new TimeoutException($"{fileName} timed out.");
+            }
         }
 
         var stdout = stdoutTask.GetAwaiter().GetResult();
@@ -204,5 +206,17 @@ public static class FfmpegProcess
         }
 
         return capture ? stdout : stderr;
+    }
+
+    private static void TryKill(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+            // best effort
+        }
     }
 }

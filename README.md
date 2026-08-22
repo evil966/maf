@@ -30,7 +30,16 @@ Each agent has tools, a shared `ProductionContextProvider`, file memory under `o
 
 ## Run
 
-Open `NarrationStudio.slnx` in Visual Studio 2026, or:
+Open `NarrationStudio.slnx` in Visual Studio 2026.
+
+**HTTP service** (n8n / Docker). Empty args listen on `http://0.0.0.0:5088`. Optional job API key: `docs/n8n-service.pdf` §3.1. How n8n is used, including the Docker Compose additions: `docs/n8n-service.pdf`. Architecture: `docs/NarrationStudio-Internal-Workings.pdf` §19.
+
+```powershell
+cd E:\exercises\maf
+dotnet run --project src\NarrationStudio
+```
+
+**CLI production:**
 
 ```powershell
 cd E:\exercises\maf
