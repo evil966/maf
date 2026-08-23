@@ -1,6 +1,6 @@
 # Narration Studio as an n8n service
 
-This note records **what was built on 22 Aug 2026**, the decisions that shaped it, and how to operate it now. The Windows process still owns every PNG / MP3 / MP4 write through `ProductionTools`. n8n only starts jobs, polls status, and downloads the merged MP4. Printable copy: [`docs/n8n-service.pdf`](n8n-service.pdf). Architecture context: [`docs/NarrationStudio-Internal-Workings.pdf`](NarrationStudio-Internal-Workings.pdf) §19.
+This note records **what was built on 22–23 Aug 2026**, the decisions that shaped it, and how to operate it now. n8n is the **loop**: each factory stage is a node. The Windows process is a sidecar that still owns every PNG / MP3 / MP4 write through `ProductionTools`. Printable copy: [`docs/n8n-service.pdf`](n8n-service.pdf). Architecture context: [`docs/NarrationStudio-Internal-Workings.pdf`](NarrationStudio-Internal-Workings.pdf) §19.
 
 ## What was asked
 
@@ -10,7 +10,7 @@ Constraints that followed:
 
 - n8n already runs in **Docker on the same PC** (stack `n8n-api_icountera`, UI on port **5678**). The container cannot see `E:\…` paths.
 - Studio must stay a **Windows process** so it can use ffmpeg, SAPI, and Ollama on `localhost:11434`.
-- A full video run is longer than n8n’s default HTTP timeout, so the API is **async** (`202` + `jobId`), not a blocking POST.
+- A full video run is longer than n8n’s default HTTP timeout. The product path is one HTTP step per tool. Only `plan-slides` and `tts` return **202** and need a Wait poll. `POST /v1/jobs` remains a compatibility “run all”.
 - Production stays **one job at a time** (Ollama / ffmpeg / ElevenLabs). Jobs write under `output/jobs/{jobId}/` so one run cannot wipe another.
 - API keys stay off the public form.
 
@@ -29,22 +29,80 @@ Both a **custom node** and a **Form Trigger** sample were shipped.
 | Not on the form | `ElevenLabsApiKey` (credential), `OutputDirectory` (server sets `output/jobs/{id}`) |
 | Community npm install | **Do not use.** `n8n-nodes-narration-studio` is this repo, not the public registry |
 
+## Workflows
+
+### Narration Studio factory
+
+Same tool sequence for CLI (`--orchestration`) and for an HTTP job. Caps come from `Studio:` (`SegmentCount`, `MaxSlidesPerSegment`, `TargetTalkMinutes`). All PNG / MP3 / MP4 writes go through `ProductionTools`. SVG: [`docs/diagrams/studio-factory.svg`](diagrams/studio-factory.svg).
+
 ```mermaid
-flowchart LR
-  form[n8n Form Trigger]
-  node[Custom Narration Studio node]
-  api[Windows Kestrel :5088]
-  queue[Job queue capacity 1]
-  harness[ProductionHarness]
-  tools[ProductionTools]
-  form --> node --> api --> queue --> harness --> tools
+flowchart TD
+  transcript[Transcript file] --> rewrite{UseStubNarration?}
+  rewrite -->|yes| stub[Copy stub talk]
+  rewrite -->|no| ollamaN[Ollama rewrite]
+  stub --> talk[narration-rewritten.txt]
+  ollamaN --> talk
+  talk --> mode{orchestration}
+  mode -->|direct or no crew| exec[DirectExecutor]
+  mode -->|handoff or sequential| maf[MAF specialists call the same tools]
+  maf --> haveMerge{merged MP4 on disk?}
+  haveMerge -->|no failover| exec
+  haveMerge -->|yes| checks
+  exec --> scripts[Split into SegmentCount scripts]
+  scripts --> plan[Plan ≤ MaxSlidesPerSegment slides each]
+  plan --> slideStub{UseStubSlidePhrases?}
+  slideStub -->|no| ollamaS[Ollama one sentence per slide]
+  slideStub -->|yes| png
+  ollamaS --> png[Render PNG slides]
+  png --> tts[TTS audio-NN.mp3]
+  tts --> segs[Compose video-NN.mp4]
+  segs --> merge[Merge video_RunId.mp4]
+  merge --> checks[HarnessChecks]
+  checks --> done[status complete]
 ```
+
+CLI entry: `dotnet run --project src\NarrationStudio -- --orchestration direct` (or handoff / sequential). Empty args do **not** run this loop; they start Kestrel.
+
+### n8n calling Narration Studio
+
+n8n is the loop. Each stage node calls one Windows step. PNG / MP3 / MP4 writes stay on `ProductionTools`. SVG: [`docs/diagrams/n8n-job.svg`](diagrams/n8n-job.svg).
+
+```mermaid
+flowchart TD
+  form[Form Trigger: upload transcript and stub] --> create[Create session]
+  create -->|POST /v1/sessions 201 ready| rewrite[Rewrite]
+  rewrite --> segment[Segment]
+  segment --> plan[Plan slides]
+  plan -->|202| waitPlan[Wait for plan-slides]
+  waitPlan --> render[Render PNGs]
+  waitPlan --> tts[TTS]
+  tts -->|202| waitTts[Wait for TTS]
+  render --> join[Join render and TTS]
+  waitTts --> join
+  join --> compose[Compose MP4s]
+  compose --> merge[Merge MP4]
+  merge --> verify[HarnessChecks]
+  verify -->|status complete| dl[Download merged]
+  verify -->|failed| err[Stop with check list]
+  rewrite --> sidecar[Windows ProductionTools]
+  segment --> sidecar
+  plan --> sidecar
+  render --> sidecar
+  tts --> sidecar
+  compose --> sidecar
+  merge --> sidecar
+  verify --> sidecar
+```
+
+`POST /v1/jobs` + `JobWorker` is still available as a compatibility black-box run. Compose / merge / rewrite still take mutex `NarrationStudio.Production`. **Render** and **TTS** may run at the same time on one session (different folders); Wait For Step polls `steps[step]`, not the single `currentStep` field.
+
+Optional credential on every Studio node except the Form Trigger sends `X-Api-Key`.
 
 ## What shipped
 
 ### Windows job API
 
-Empty `dotnet run --project src\NarrationStudio` from the **repo root** starts Kestrel on `Service:ListenUrl` (`http://0.0.0.0:5088`). Pipeline types are **scoped** per job. `JobWorker` is a serial `BackgroundService` over a `Channel`.
+Empty `dotnet run --project src\NarrationStudio` from the **repo root** starts Kestrel on `Service:ListenUrl` (`http://0.0.0.0:5088`). Pipeline types are **scoped** per job or session. `JobWorker` still runs compatibility `POST /v1/jobs`. `StepWorker` runs long session steps (`plan-slides`, `tts`). Both take mutex `NarrationStudio.Production`.
 
 `JobOptionsMerger` clones `Studio:` / `Model:` from the **bin** `appsettings.json` and overlays the request. `undefined` / `null` strings from n8n expressions are ignored.
 
@@ -56,7 +114,7 @@ Optional create headers (never form fields): `X-ElevenLabs-Api-Key`, `X-OpenAI-A
 
 Package: [`n8n/n8n-nodes-narration-studio`](../n8n/n8n-nodes-narration-studio). Shipped as JS in `dist/` (no TypeScript build). Node versions **2 and 3** share the same code.
 
-Operations: **Start Job**, **Get Status**, **Wait Until Complete**, **Download Merged Video**.
+Operations: **Create Session**, one op per step (**Rewrite**, **Segment**, **Plan Slides**, **Render**, **TTS**, **Compose**, **Merge**, **Verify**), **Wait For Step**, plus existing **Get Status** / **Wait Until Complete** / **Download Merged Video**. **Start Job** remains the compatibility “run all”. Node versions **2, 3, and 4** share the same code.
 
 Credentials (**Narration Studio API**) are optional. With none selected the node calls `http://host.docker.internal:5088`.
 
@@ -64,23 +122,27 @@ Start Job POSTs **JSON** with real booleans/numbers and embeds uploads as `trans
 
 ### Form workflow
 
-[`n8n/workflows/narration-studio-form.json`](../n8n/workflows/narration-studio-form.json): Form Trigger → Start job → Wait until complete → Download merged video.
+[`n8n/workflows/narration-studio-form.json`](../n8n/workflows/narration-studio-form.json): Form Trigger → Create session → Rewrite → Segment → Plan slides → Wait → **Render and TTS in parallel** → Join → Compose → Merge → Verify → Download. On `verify` failure the workflow stops with the harness check list. Success is `status == complete` plus files on disk.
 
 Every field has a **label** and a hint with the config key (`Studio:SegmentCount`, `Model:Endpoint`, …). Numeric/text/dropdown defaults match `appsettings.json`. File fields cannot be pre-filled.
 
 ### Tests
 
-`JobOptionsMergerTests`, `JobPathsTests`, and `JobRequestJsonTests` (string `"true"` / `"4"` deserialize as bool/int).
+`JobOptionsMergerTests`, `JobPathsTests`, `JobRequestJsonTests` (string `"true"` / `"4"` deserialize as bool/int), plus `SessionStepsTests`, `SessionStepGateTests`, `SessionIsolationTests`, and `PipelineSegmentPatchTests` (step routing, render+TTS fan-out, per-session folders, slide persist that keeps audio paths).
 
 ## API
 
 | Method | Path | Notes |
 | --- | --- | --- |
 | GET | `/health` | No API key |
-| POST | `/v1/jobs` | JSON **or** multipart. Returns **202** `{ jobId, status: queued, … }` |
-| GET | `/v1/jobs/{id}` | `queued` / `running` / `complete` / `failed` |
+| POST | `/v1/sessions` | JSON **or** multipart. Returns **201** `{ jobId, status: ready }`. No `JobWorker` enqueue. Sessions use orchestration `direct`. |
+| POST | `/v1/sessions/{id}/steps/{step}` | One `ProductionTools` / `HarnessChecks` call. Short steps **200**. `plan-slides` and `tts` **202**; poll `GET /v1/jobs/{id}` until `stepStatus` is `complete` or `failed`. Status includes `currentStep` / `stepStatus` / `stepResult`. |
+| POST | `/v1/jobs` | Compatibility run-all. Returns **202** `{ jobId, status: queued, … }` |
+| GET | `/v1/jobs/{id}` | `queued` / `ready` / `running` / `complete` / `failed` plus `currentStep` / `stepStatus` / `steps` (per-step map for fan-out) |
 | GET | `/v1/jobs/{id}/events` | `events.jsonl` lines |
 | GET | `/v1/jobs/{id}/artifacts/merged` | MP4 download |
+
+Steps: `rewrite`, `segment`, `plan-slides`, `render`, `tts`, `compose`, `merge`, `verify`. Unknown step is **400**. A full `POST /v1/jobs` id is **409** on the session step route. Two n8n executions cannot run a step on the same session at once (**409**).
 
 JSON body fields include `title`, `orchestration`, stub flags, segment/slide/talk caps, Ollama endpoint/model/timeout, OpenAI/Azure model names, ElevenLabs voice/model ids, video size, `rewriteExtraInstructions`, `callbackUrl`, `keepArtifacts`, plus `transcriptText` / `stubNarrationText`.
 
@@ -140,7 +202,7 @@ $env:Service__ApiKey = "paste-the-secret-here"
 
 Stop and start Studio so the new value loads.
 
-**3. Put it on n8n.** This is only n8n storing a secret and attaching it to the three Studio nodes. It is not a form field.
+**3. Put it on n8n.** This is only n8n storing a secret and attaching it to the Studio nodes. It is not a form field.
 
 A **Narration Studio API** credential is one vault record:
 
@@ -152,7 +214,7 @@ A **Narration Studio API** credential is one vault record:
 
 Create it: n8n → **Credentials** → **Add credential** → search **Narration Studio API** (from the mounted custom node, not public npm). Set Base URL to `http://host.docker.internal:5088`. Set **API Key** to the exact Studio string (no extra space or quotes). Leave vendor keys blank unless you want those headers. Save. **Test** hits `GET /health` and only proves the URL is reachable, not that the job key is correct.
 
-Attach it on all three nodes that call Studio. The sample workflow is Form → **Start job** → **Wait until complete** → **Download merged video**. Open each of those last three, set **Credential** to the record you saved, and save the workflow. If only Start job has it, Wait/Download get **401**. **On form submission** does not get this credential.
+Attach it on all three nodes that call Studio. The sample workflow is Form → **Create session** → stage nodes → **Download merged video**. Open every Narration Studio node except the Form Trigger, set **Credential** to the record you saved, and save the workflow. If only Create session has it, later stages get **401**. **On form submission** does not get this credential.
 
 On each request the node uses the credential Base URL (or falls back to `http://host.docker.internal:5088`) and, if **API Key** is non-empty, sends `X-Api-Key`. Studio compares that header to `Service:ApiKey` with an exact match. Empty Studio key → any request is allowed. Set Studio key + missing/wrong header → **401** `{ "error": "Missing or invalid X-Api-Key." }`.
 
@@ -226,7 +288,7 @@ The volume is live (read-only in the container, writable on Windows). Edit `n8n/
 | --- | --- |
 | JS / credentials / SVG only | `docker compose -p n8n-api_icountera restart n8n` then **Ctrl+Shift+R** in the editor |
 | `package.json` name/files/`n8n` block | `npm install` again (same exec line as above), then restart + hard-refresh |
-| Workflow JSON | Re-import `n8n/workflows/narration-studio-form.json` (or replace the Start job node) |
+| Workflow JSON | Re-import `n8n/workflows/narration-studio-form.json` |
 
 Do not `docker compose up` without `-p n8n-api_icountera`.
 
@@ -280,6 +342,8 @@ Shown on the form / node: title, orchestration, stub flags, transcript and stub 
 
 ```powershell
 curl http://localhost:5088/health
+curl -X POST http://localhost:5088/v1/sessions -H "Content-Type: application/json" -d "{\"useStubNarration\":true,\"transcriptText\":\"hello from curl\",\"stubNarrationText\":\"hello stub\"}"
+curl -X POST http://localhost:5088/v1/sessions/{id}/steps/rewrite
 curl -X POST http://localhost:5088/v1/jobs -H "Content-Type: application/json" -d "{\"orchestration\":\"direct\",\"useStubNarration\":true,\"transcriptText\":\"hello from curl\",\"stubNarrationText\":\"hello stub\"}"
 ```
 

@@ -22,7 +22,7 @@ dotnet run --project src\NarrationStudio -- --orchestration handoff
 dotnet run --project src\NarrationStudio -- --orchestration sequential
 ```
 
-No args (or `--service`) starts the HTTP job API on `http://0.0.0.0:5088` for n8n. `--orchestration` still runs the CLI and exits. Optional `Service:ApiKey` (or `Service__ApiKey`) is sent as `X-Api-Key`; mint a random string — there is no generate endpoint. See `docs/n8n-service.pdf` §3.1 and `docs/NarrationStudio-Internal-Workings.pdf` §19.
+No args (or `--service`) starts the HTTP API on `http://0.0.0.0:5088` for n8n. n8n is the loop (`POST /v1/sessions` + per-step `/v1/sessions/{id}/steps/{step}`); `POST /v1/jobs` is the compatibility run-all. `--orchestration` still runs the CLI and exits. Optional `Service:ApiKey` (or `Service__ApiKey`) is sent as `X-Api-Key`; mint a random string — there is no generate endpoint. See `docs/n8n-service.pdf` §3.1 and `docs/NarrationStudio-Internal-Workings.pdf` §19.
 
 `--orchestration` default is `handoff` (MAF). `direct` is the reference executor and the failover path.
 
@@ -37,4 +37,5 @@ No args (or `--service`) starts the HTTP job API on `http://0.0.0.0:5088` for n8
 - `src/NarrationStudio/Agents/` — MAF crew and workflows
 - `src/NarrationStudio/Orchestration/DirectExecutor.cs` — no-agent tool loop
 - `docs/` — architecture notes (harness, orchestration, guardrails, memory, n8n service PDF)
+- `docs/diagrams/` — factory and n8n mermaid (`.mmd` / `.svg`)
 - `n8n/` — custom node + Form Trigger workflow for Docker n8n

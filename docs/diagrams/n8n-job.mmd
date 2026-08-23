@@ -1,0 +1,24 @@
+flowchart TD
+  form[Form Trigger: upload transcript and stub] --> create[Create session]
+  create -->|POST /v1/sessions 201 ready| rewrite[Rewrite]
+  rewrite --> segment[Segment]
+  segment --> plan[Plan slides]
+  plan -->|202| waitPlan[Wait for plan-slides]
+  waitPlan --> render[Render PNGs]
+  waitPlan --> tts[TTS]
+  tts -->|202| waitTts[Wait for TTS]
+  render --> join[Join render and TTS]
+  waitTts --> join
+  join --> compose[Compose MP4s]
+  compose --> merge[Merge MP4]
+  merge --> verify[HarnessChecks]
+  verify -->|status complete| dl[Download merged]
+  verify -->|failed| err[Stop with check list]
+  rewrite --> sidecar[Windows ProductionTools]
+  segment --> sidecar
+  plan --> sidecar
+  render --> sidecar
+  tts --> sidecar
+  compose --> sidecar
+  merge --> sidecar
+  verify --> sidecar

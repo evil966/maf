@@ -4,6 +4,7 @@ using Microsoft.Extensions.Hosting;
 using NarrationStudio.Configuration;
 using NarrationStudio.Harness;
 using NarrationStudio.Models;
+using NarrationStudio.Service;
 using NarrationStudio.Services;
 
 namespace NarrationStudio.Tools;
@@ -180,11 +181,7 @@ public sealed class ProductionTools
                 }
             }
 
-            _store.Mutate(state =>
-            {
-                state.Segments = snapshot.Segments;
-                state.Status = "slides-rendered";
-            });
+            _store.Mutate(state => PipelineSegmentPatch.ApplySlides(state, snapshot.Segments));
 
             return $"Rendered slide images in {_store.SlidesDirectory}.";
         });

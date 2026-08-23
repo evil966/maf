@@ -27,10 +27,6 @@
     <PackageReference Include="Microsoft.Agents.AI.Workflows" Version="1.17.0" />
     <PackageReference Include="Microsoft.Extensions.AI" Version="10.7.0" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.6.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="10.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="OllamaSharp" Version="5.4.25" />
     <PackageReference Include="SixLabors.Fonts" Version="2.1.3" />

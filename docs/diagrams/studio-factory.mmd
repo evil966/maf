@@ -1,0 +1,23 @@
+flowchart TD
+  transcript[Transcript file] --> rewrite{UseStubNarration?}
+  rewrite -->|yes| stub[Copy stub talk]
+  rewrite -->|no| ollamaN[Ollama rewrite]
+  stub --> talk[narration-rewritten.txt]
+  ollamaN --> talk
+  talk --> mode{orchestration}
+  mode -->|direct or no crew| exec[DirectExecutor]
+  mode -->|handoff or sequential| maf[MAF specialists call the same tools]
+  maf --> haveMerge{merged MP4 on disk?}
+  haveMerge -->|no failover| exec
+  haveMerge -->|yes| checks
+  exec --> scripts[Split into SegmentCount scripts]
+  scripts --> plan[Plan slides up to MaxSlidesPerSegment each]
+  plan --> slideStub{UseStubSlidePhrases?}
+  slideStub -->|no| ollamaS[Ollama one sentence per slide]
+  slideStub -->|yes| png
+  ollamaS --> png[Render PNG slides]
+  png --> tts[TTS audio-NN.mp3]
+  tts --> segs[Compose video-NN.mp4]
+  segs --> merge[Merge video_RunId.mp4]
+  merge --> checks[HarnessChecks]
+  checks --> done[status complete]

@@ -27,8 +27,10 @@ web.Services.Configure<ServiceOptions>(web.Configuration.GetSection(ServiceOptio
 web.Services.AddNarrationStudioPipeline(web.Configuration);
 web.Services.AddSingleton<JobStore>();
 web.Services.AddSingleton<JobQueue>();
+web.Services.AddSingleton<StepQueue>();
 web.Services.AddHttpClient(nameof(JobWorker));
 web.Services.AddHostedService<JobWorker>();
+web.Services.AddHostedService<StepWorker>();
 
 var listenUrl = web.Configuration[$"{ServiceOptions.SectionName}:ListenUrl"];
 if (string.IsNullOrWhiteSpace(listenUrl))

@@ -4,7 +4,7 @@
     {
       "parameters": {
         "formTitle": "Narration Studio",
-        "formDescription": "Defaults match src/NarrationStudio/appsettings.json. Upload files here (n8n in Docker cannot browse Windows paths). API keys are not on this form — set them in Narration Studio API credentials.",
+        "formDescription": "Defaults match src/NarrationStudio/appsettings.json. Upload files here (n8n in Docker cannot browse Windows paths). API keys are not on this form — set them in Narration Studio API credentials. n8n runs each factory stage; Windows ProductionTools still writes every PNG / MP3 / MP4.",
         "formFields": {
           "values": [
             {
@@ -36,7 +36,7 @@
               "fieldType": "dropdown",
               "requiredField": true,
               "defaultValue": "direct",
-              "hint": "CLI default in appsettings is unused; n8n jobs default to direct.",
+              "hint": "The session workflow is always the explicit stage chain (direct). This field is kept for the form overlay; MAF handoff is CLI-only.",
               "fieldOptions": {
                 "values": [
                   { "option": "direct" },
@@ -217,7 +217,7 @@
     },
     {
       "parameters": {
-        "operation": "start",
+        "operation": "createSession",
         "title": "={{ $json.title }}",
         "orchestration": "={{ $json.orchestration || 'direct' }}",
         "useStubNarration": "={{ $json.useStubNarration !== 'false' }}",
@@ -241,24 +241,139 @@
         "rewriteExtraInstructions": "={{ $json.rewriteExtraInstructions }}",
         "keepArtifacts": "={{ $json.keepArtifacts !== 'false' }}"
       },
-      "id": "start-job",
-      "name": "Start job",
+      "id": "create-session",
+      "name": "Create session",
       "type": "n8n-nodes-narration-studio.narrationStudio",
-      "typeVersion": 3,
+      "typeVersion": 4,
       "position": [280, 0]
     },
     {
       "parameters": {
-        "operation": "wait",
+        "operation": "rewrite",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "rewrite",
+      "name": "Rewrite talk",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [0, 220]
+    },
+    {
+      "parameters": {
+        "operation": "segment",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "segment",
+      "name": "Segment scripts",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [280, 220]
+    },
+    {
+      "parameters": {
+        "operation": "planSlides",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "plan-slides",
+      "name": "Plan slides",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [560, 220]
+    },
+    {
+      "parameters": {
+        "operation": "waitForStep",
         "jobId": "={{ $json.jobId }}",
+        "waitStep": "plan-slides",
         "pollInterval": 5,
         "waitTimeoutMinutes": 120
       },
-      "id": "wait-job",
-      "name": "Wait until complete",
+      "id": "wait-plan-slides",
+      "name": "Wait for plan slides",
       "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [840, 220]
+    },
+    {
+      "parameters": {
+        "operation": "render",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "render",
+      "name": "Render PNGs",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [0, 440]
+    },
+    {
+      "parameters": {
+        "operation": "tts",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "tts",
+      "name": "Synthesize audio",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [280, 440]
+    },
+    {
+      "parameters": {
+        "operation": "waitForStep",
+        "jobId": "={{ $json.jobId }}",
+        "waitStep": "tts",
+        "pollInterval": 5,
+        "waitTimeoutMinutes": 120
+      },
+      "id": "wait-tts",
+      "name": "Wait for TTS",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [560, 440]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll",
+        "options": {}
+      },
+      "id": "join-render-tts",
+      "name": "Join render and TTS",
+      "type": "n8n-nodes-base.merge",
       "typeVersion": 3,
-      "position": [560, 0]
+      "position": [840, 440]
+    },
+    {
+      "parameters": {
+        "operation": "compose",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "compose",
+      "name": "Compose segment MP4s",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [1120, 440]
+    },
+    {
+      "parameters": {
+        "operation": "merge",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "merge",
+      "name": "Merge MP4",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [0, 660]
+    },
+    {
+      "parameters": {
+        "operation": "verify",
+        "jobId": "={{ $json.jobId }}"
+      },
+      "id": "verify",
+      "name": "Verify harness checks",
+      "type": "n8n-nodes-narration-studio.narrationStudio",
+      "typeVersion": 4,
+      "position": [280, 660]
     },
     {
       "parameters": {
@@ -268,18 +383,51 @@
       "id": "download-video",
       "name": "Download merged video",
       "type": "n8n-nodes-narration-studio.narrationStudio",
-      "typeVersion": 3,
-      "position": [840, 0]
+      "typeVersion": 4,
+      "position": [560, 660]
     }
   ],
   "connections": {
     "On form submission": {
-      "main": [[{ "node": "Start job", "type": "main", "index": 0 }]]
+      "main": [[{ "node": "Create session", "type": "main", "index": 0 }]]
     },
-    "Start job": {
-      "main": [[{ "node": "Wait until complete", "type": "main", "index": 0 }]]
+    "Create session": {
+      "main": [[{ "node": "Rewrite talk", "type": "main", "index": 0 }]]
     },
-    "Wait until complete": {
+    "Rewrite talk": {
+      "main": [[{ "node": "Segment scripts", "type": "main", "index": 0 }]]
+    },
+    "Segment scripts": {
+      "main": [[{ "node": "Plan slides", "type": "main", "index": 0 }]]
+    },
+    "Plan slides": {
+      "main": [[{ "node": "Wait for plan slides", "type": "main", "index": 0 }]]
+    },
+    "Wait for plan slides": {
+      "main": [[
+        { "node": "Render PNGs", "type": "main", "index": 0 },
+        { "node": "Synthesize audio", "type": "main", "index": 0 }
+      ]]
+    },
+    "Render PNGs": {
+      "main": [[{ "node": "Join render and TTS", "type": "main", "index": 0 }]]
+    },
+    "Synthesize audio": {
+      "main": [[{ "node": "Wait for TTS", "type": "main", "index": 0 }]]
+    },
+    "Wait for TTS": {
+      "main": [[{ "node": "Join render and TTS", "type": "main", "index": 1 }]]
+    },
+    "Join render and TTS": {
+      "main": [[{ "node": "Compose segment MP4s", "type": "main", "index": 0 }]]
+    },
+    "Compose segment MP4s": {
+      "main": [[{ "node": "Merge MP4", "type": "main", "index": 0 }]]
+    },
+    "Merge MP4": {
+      "main": [[{ "node": "Verify harness checks", "type": "main", "index": 0 }]]
+    },
+    "Verify harness checks": {
       "main": [[{ "node": "Download merged video", "type": "main", "index": 0 }]]
     }
   },

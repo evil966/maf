@@ -71,6 +71,27 @@ public sealed class PipelineStore
         }
     }
 
+    public bool AttachExisting(string outputDirectory)
+    {
+        lock (_gate)
+        {
+            var path = Path.Combine(Path.GetFullPath(outputDirectory), "pipeline-state.json");
+            if (!File.Exists(path))
+            {
+                return false;
+            }
+
+            var loaded = JsonSerializer.Deserialize(File.ReadAllText(path), PipelineJsonContext.Default.PipelineState);
+            if (loaded is null || string.IsNullOrWhiteSpace(loaded.OutputDirectory))
+            {
+                return false;
+            }
+
+            _state = loaded;
+            return true;
+        }
+    }
+
     public string AudioFileName(int segmentNumber) => $"audio-{segmentNumber:00}.mp3";
     public string VideoFileName(int segmentNumber) => $"video-{segmentNumber:00}.mp4";
     public string MergedVideoFileName() => $"video_{_state.RunId}.mp4";

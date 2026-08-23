@@ -4,15 +4,52 @@ A Visual Studio 2026 / .NET 10 boilerplate for [Microsoft Agent Framework](https
 
 ## Workflow
 
-1. Read `voice_transcript.txt`.
-2. Submit it to local **Ollama** (`qwen3.8:latest` at `http://localhost:11434`) and rewrite it as a **~7-minute spoken talk** for a mixed audience leaning toward executives. The result is `output/scripts/narration-rewritten.txt`.
-3. Split **that rewritten talk** into **8 narration scripts** for ElevenLabs (or Windows speech if no API key).
-4. For each script, create **at most 5 image slides**. Each slide contains the phrase that covers that part of the narration.
-5. When the scripts exist, write `audio-01.mp3` … `audio-08.mp3`.
-6. Sync each MP3 with that segment’s slides into `video-01.mp4` … `video-08.mp4`.
-7. Merge the eight videos into `video_yyyyMMdd_HHmmss.mp4`.
+Caps come from `Studio:` (`SegmentCount`, `MaxSlidesPerSegment`, `TargetTalkMinutes`). Stub flags skip Ollama. Diagrams: `docs/n8n-service.md`, `docs/diagrams/studio-factory.svg`, `docs/diagrams/n8n-job.svg`.
 
-Artifacts land in `output/`.
+```mermaid
+flowchart TD
+  transcript[Transcript file] --> rewrite{UseStubNarration?}
+  rewrite -->|yes| stub[Copy stub talk]
+  rewrite -->|no| ollamaN[Ollama rewrite]
+  stub --> talk[narration-rewritten.txt]
+  ollamaN --> talk
+  talk --> mode{orchestration}
+  mode -->|direct or no crew| exec[DirectExecutor]
+  mode -->|handoff or sequential| maf[MAF specialists call the same tools]
+  maf --> haveMerge{merged MP4 on disk?}
+  haveMerge -->|no failover| exec
+  haveMerge -->|yes| checks
+  exec --> scripts[Split into SegmentCount scripts]
+  scripts --> plan[Plan slides up to MaxSlidesPerSegment each]
+  plan --> slideStub{UseStubSlidePhrases?}
+  slideStub -->|no| ollamaS[Ollama one sentence per slide]
+  slideStub -->|yes| png
+  ollamaS --> png[Render PNG slides]
+  png --> tts[TTS audio-NN.mp3]
+  tts --> segs[Compose video-NN.mp4]
+  segs --> merge[Merge video_RunId.mp4]
+  merge --> checks[HarnessChecks]
+  checks --> done[status complete]
+```
+
+n8n is the loop. Form Trigger → Create session → one node per factory stage → download. Windows `ProductionTools` still writes every PNG / MP3 / MP4:
+
+```mermaid
+flowchart TD
+  form[Form Trigger: upload transcript and stub] --> create[Create session]
+  create --> rewrite[Rewrite]
+  rewrite --> segment[Segment]
+  segment --> plan[Plan slides]
+  plan --> render[Render PNGs]
+  plan --> tts[TTS]
+  render --> compose[Compose MP4s]
+  tts --> compose
+  compose --> merge[Merge MP4]
+  merge --> verify[HarnessChecks]
+  verify --> dl[Download merged]
+```
+
+Artifacts land in `output/` (CLI) or `output/jobs/{jobId}/` (n8n).
 
 ## Agents
 

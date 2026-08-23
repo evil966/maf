@@ -192,6 +192,7 @@
   .small { font-size: 9.3pt; color: var(--muted); }
   .mono { font-family: Consolas, monospace; font-size: 8.6pt; }
   footer.doc-end { margin-top: 12mm; color: var(--muted); font-size: 9pt; }
+  img.diagram { width: 100%; max-width: 170mm; height: auto; margin: 0 0 4mm 0; page-break-inside: avoid; }
 </style>
 </head>
 <body>
@@ -206,7 +207,7 @@
     <div><b>Project</b> &nbsp; src/NarrationStudio/NarrationStudio.csproj &nbsp;·&nbsp; net10.0-windows</div>
     <div><b>Audience</b> &nbsp; Developers onboarding to the codebase</div>
     <div><b>Classification</b> &nbsp; Internal. Contains architecture and configuration details; API keys are not reproduced here.</div>
-    <div><b>Date</b> &nbsp; 22 August 2026 &nbsp;·&nbsp; <b>Revision</b> 4</div>
+    <div><b>Date</b> &nbsp; 23 August 2026 &nbsp;·&nbsp; <b>Revision</b> 5</div>
     <div><b>Status</b> &nbsp; Confirmed against current source. Where behavior is implied by a library rather than this repo, that is labelled <i>inferred</i>.</div>
   </div>
 </section>
@@ -225,6 +226,7 @@
   <p><b>Revision 2</b> (21 August 2026) adds: Ollama one-sentence slide text; rephrase duration logs; timestamped agent-memory folders that are <i>not</i> wiped; snapshots in every mode; ElevenLabs key from <code>Studio:ElevenLabsApiKey</code>.</p>
   <p><b>Revision 3</b> (22 August 2026) is the harness-centric MAF refactor: <code>ProductionHarness</code> owns the run; <code>DirectExecutor</code> replaces <code>DirectPipelineRunner</code>; <code>HarnessChecks</code> fails the process if artifacts are wrong; <code>events.jsonl</code>; <code>UseStubSlidePhrases</code>; option-driven prompts; cancellation through Ollama/TTS/ffmpeg; <code>AGENTS.md</code> and <code>tests/NarrationStudio.Tests</code>.</p>
   <p><b>Revision 4</b> (22 August 2026) adds the n8n job service: empty args start Kestrel on <code>http://0.0.0.0:5088</code>; scoped pipeline DI; serial <code>JobWorker</code>; custom node + Form Trigger; Docker Compose mount into stack <code>n8n-api_icountera</code>. See §19 and <code>docs/n8n-service.pdf</code>.</p>
+  <p><b>Revision 5</b> (23 August 2026) makes n8n the loop: <code>POST /v1/sessions</code> + <code>POST /v1/sessions/{id}/steps/{step}</code>; 202+poll only for <code>plan-slides</code> and <code>tts</code>; <code>POST /v1/jobs</code> stays as a compatibility run-all. After plan-slides, render and TTS may run in parallel (per-step <code>steps</code> map; mutex skipped for that pair). Windows <code>ProductionTools</code> is still the only PNG / MP3 / MP4 writer.</p>
 
   <div class="callout">
     <div class="label">How to read “confirmed” vs “inferred”</div>
@@ -271,7 +273,7 @@
   <li>Sync each MP3 with that segment’s slides into <code>video-01.mp4</code> … <code>video-NN.mp4</code>.</li>
   <li>Merge into <code>video_yyyyMMdd_HHmmss.mp4</code> in the output folder.</li>
 </ol>
-<p>The application is still a <b>Windows console factory</b>, not a multi-user SPA or SQL product. With <b>empty args</b> (or <code>--service</code>) the same EXE also hosts a small Kestrel job API on <code>http://0.0.0.0:5088</code> so Docker n8n can start productions. Passing <code>--orchestration</code> or a transcript path still runs the CLI and exits. There is no MVC site. The analogue of “controllers” is <code>JobEndpoints</code> (HTTP) plus the thin <code>ProductionApp</code> CLI; <code>ProductionHarness</code> still owns run policy; <code>ProductionTools</code> is still the only PNG/MP3/MP4 surface. See §19.</p>
+<p>The application is still a <b>Windows console factory</b>, not a multi-user SPA or SQL product. With <b>empty args</b> (or <code>--service</code>) the same EXE also hosts a small Kestrel API on <code>http://0.0.0.0:5088</code> so Docker n8n can drive productions stage by stage. Passing <code>--orchestration</code> or a transcript path still runs the CLI and exits. There is no MVC site. The analogue of “controllers” is <code>JobEndpoints</code> (HTTP) plus the thin <code>ProductionApp</code> CLI; <code>ProductionHarness</code> still owns CLI / compatibility-job policy; <code>ProductionTools</code> is still the only PNG/MP3/MP4 surface. See §19.</p>
 
 <h2>1.2 Main use cases</h2>
 <table>
@@ -282,11 +284,11 @@
   <tr><td>Call Ollama for the rewrite instead of the stub</td><td>Set <code>Studio:UseStubNarration</code> to <code>false</code></td><td><code>NarrationRewriteService.RephraseAsync</code> posts the raw transcript to Ollama.</td></tr>
   <tr><td>Skip Ollama for on-screen slide sentences</td><td>Set <code>Studio:UseStubSlidePhrases</code> to <code>true</code></td><td><code>SlidePhraseRewriteService</code> copies each excerpt into <code>Phrase</code> (no HTTP). Independent of narration stubbing.</td></tr>
   <tr><td>Prevent overlapping runs</td><td>Automatic</td><td>Named mutex <code>NarrationStudio.Production</code>. CLI second instance throws. HTTP jobs queue one at a time and take the same mutex.</td></tr>
-  <tr><td>Start a production from n8n</td><td>Empty-args service + Form Trigger workflow</td><td>n8n uploads files, POST <code>/v1/jobs</code> returns 202, polls until complete, downloads the merged MP4. Artifacts under <code>output/jobs/{jobId}/</code>.</td></tr>
+  <tr><td>Start a production from n8n</td><td>Empty-args service + Form Trigger workflow</td><td>n8n uploads files, POST <code>/v1/sessions</code> returns 201, then each stage node calls <code>/v1/sessions/{id}/steps/{step}</code>. <code>plan-slides</code> and <code>tts</code> return 202 and are polled. Verify then download. Artifacts under <code>output/jobs/{jobId}/</code>. <code>POST /v1/jobs</code> remains a compatibility run-all.</td></tr>
 </table>
 
 <h2>1.3 High-level architecture</h2>
-<p>Composition starts in <code>Program.cs</code>. <b>CLI</b> uses Generic Host (<code>Host.CreateApplicationBuilder</code>) and calls <code>ProductionApp.RunAsync</code>. <b>Service</b> uses <code>WebApplication</code>, maps <code>JobEndpoints</code>, and runs <code>JobWorker</code>. Pipeline types are registered <b>scoped</b> (<code>AddNarrationStudioPipeline</code>) so each HTTP job can overlay <code>Studio:</code> / <code>Model:</code> without mutating another run. Control flows: host → CLI <code>ProductionApp</code> or HTTP <code>JobWorker</code> → <code>ProductionHarness</code> → MAF <code>WorkflowHost</code> or <code>DirectExecutor</code> → <code>ProductionTools</code> → domain services → disk. After tools finish, <code>HarnessChecks</code> verifies artifacts or throws.</p>
+<p>Composition starts in <code>Program.cs</code>. <b>CLI</b> uses Generic Host (<code>Host.CreateApplicationBuilder</code>) and calls <code>ProductionApp.RunAsync</code>. <b>Service</b> uses <code>WebApplication</code>, maps <code>JobEndpoints</code>, and runs <code>JobWorker</code> plus <code>StepWorker</code>. Pipeline types are registered <b>scoped</b> (<code>AddNarrationStudioPipeline</code>) so each HTTP job or session step can overlay <code>Studio:</code> / <code>Model:</code> without mutating another run. Control flows: host → CLI <code>ProductionApp</code>, compatibility HTTP <code>JobWorker</code> → <code>ProductionHarness</code>, or n8n session steps → <code>SessionStepRunner</code> → <code>ProductionTools</code> → domain services → disk. After tools finish, <code>HarnessChecks</code> verifies artifacts or throws.</p>
 <div class="fig">
   <div class="boxes">
     <div class="box"><b>Host / DI</b> — Program.cs: CLI host or Kestrel; scoped pipeline registrations</div>
@@ -672,8 +674,10 @@ NarrationStudio.exe --orchestration=direct</pre>
 <table>
   <tr><th>Method</th><th>Path</th><th>Notes</th></tr>
   <tr><td>GET</td><td><code>/health</code></td><td>No API key</td></tr>
-  <tr><td>POST</td><td><code>/v1/jobs</code></td><td>JSON or multipart. <b>202</b> <code>{ jobId, status: queued }</code></td></tr>
-  <tr><td>GET</td><td><code>/v1/jobs/{id}</code></td><td><code>queued</code> / <code>running</code> / <code>complete</code> / <code>failed</code></td></tr>
+  <tr><td>POST</td><td><code>/v1/sessions</code></td><td>JSON or multipart. <b>201</b> <code>{ jobId, status: ready }</code>. No enqueue.</td></tr>
+  <tr><td>POST</td><td><code>/v1/sessions/{id}/steps/{step}</code></td><td>One tool. Short steps <b>200</b>. <code>plan-slides</code> / <code>tts</code> <b>202</b>.</td></tr>
+  <tr><td>POST</td><td><code>/v1/jobs</code></td><td>Compatibility run-all. <b>202</b> <code>{ jobId, status: queued }</code></td></tr>
+  <tr><td>GET</td><td><code>/v1/jobs/{id}</code></td><td><code>queued</code> / <code>ready</code> / <code>running</code> / <code>complete</code> / <code>failed</code> plus <code>currentStep</code> / <code>stepStatus</code></td></tr>
   <tr><td>GET</td><td><code>/v1/jobs/{id}/events</code></td><td><code>events.jsonl</code> lines</td></tr>
   <tr><td>GET</td><td><code>/v1/jobs/{id}/artifacts/merged</code></td><td>MP4 download</td></tr>
 </table>
@@ -710,7 +714,7 @@ NarrationStudio.exe --orchestration=direct</pre>
 </table>
 
 <h2>8.2 Controllers / handlers</h2>
-<p><code>ProductionApp.RunAsync</code> is the CLI entry. <code>JobEndpoints</code> is the HTTP entry. <code>ProductionHarness.RunAsync</code> is the production loop. Tool methods are the command handlers.</p>
+<p><code>ProductionApp.RunAsync</code> is the CLI entry. <code>JobEndpoints</code> is the HTTP entry. <code>ProductionHarness.RunAsync</code> is the CLI / compatibility-job loop. <code>SessionStepRunner</code> is the n8n stage handler. Tool methods are the command handlers.</p>
 
 <h2>8.3 Middleware</h2>
 <p>Agent middleware: <code>ProductionGuardrails.RunAsync</code> (message filter) and <code>FunctionAsync</code> (tool log). Service mode also uses ASP.NET <code>ApiKeyMiddleware</code> (optional <code>X-Api-Key</code>). Host logging is standard.</p>
@@ -869,7 +873,7 @@ NarrationStudio.exe --orchestration=direct</pre>
   <tr><td>ffmpeg compose</td><td>High CPU</td><td>8 sequential encodes 1920×1080</td></tr>
   <tr><td>ffmpeg merge copy</td><td>Fast</td><td>Re-encode fallback is slow</td></tr>
 </table>
-<p><b>Concurrency.</b> No parallel TTS or ffmpeg. Mutex forbids two pipelines. The job API queues HTTP jobs one at a time through <code>JobWorker</code>.</p>
+<p><b>Concurrency.</b> No parallel ffmpeg compose/merge. Mutex forbids two full pipelines and overlapping non-fan-out session steps. <code>render</code> and <code>tts</code> on the same session may overlap (different folders). Compatibility jobs still queue one at a time through <code>JobWorker</code>.</p>
 <p><b>Scalability.</b> Designed for one talk, one machine, one run. Not multi-tenant. n8n can submit many form posts; they wait in the channel. Current bottleneck with narration stubbing on and slide stubbing off is <b>per-slide Ollama</b>; with ElevenLabs enabled, TTS is the other long tail. Both stubs on, TTS is the long tail.</p>
 <p><b>Caching.</b> Intentionally disabled for media so reruns match current narration.</p>
 
@@ -881,6 +885,7 @@ NarrationStudio.exe --orchestration=direct</pre>
   <li><code>SlidePlannerTests</code> — never exceeds max slides.</li>
   <li><code>StudioNamingTests</code> — audio/video ranges follow SegmentCount.</li>
   <li><code>JobOptionsMergerTests</code> / <code>JobPathsTests</code> / <code>JobRequestJsonTests</code> — overlay, isolated job folders, string bools/ints from n8n JSON.</li>
+  <li><code>SessionStepsTests</code> / <code>SessionStepGateTests</code> / <code>SessionIsolationTests</code> / <code>PipelineSegmentPatchTests</code> — step names, render+TTS fan-out, session isolation, slide persist that keeps audio paths.</li>
 </ul>
 <p>There is no end-to-end test that calls Ollama, ElevenLabs, or ffmpeg. Outer agent harness for this repo: <code>AGENTS.md</code> and <code>.cursor/rules/studio-harness.mdc</code>.</p>
 <p>Manual matrix a developer should still run:</p>
@@ -997,6 +1002,14 @@ dotnet run --project src\NarrationStudio
 <p>ffmpeg, ffprobe, Windows, optional Ollama daemon, optional ElevenLabs network, optional Azure/OpenAI network.</p>
 
 <h1 id="s17">17. Technical Diagrams</h1>
+
+<h2>17.0 Narration Studio factory</h2>
+<p>Same tool sequence for CLI (<code>--orchestration</code>) and for an HTTP job. Caps come from <code>Studio:</code>. All PNG / MP3 / MP4 writes go through <code>ProductionTools</code>. Mermaid source: <code>docs/diagrams/studio-factory.mmd</code>.</p>
+<img class="diagram" src="diagrams/studio-factory.svg" alt="Narration Studio factory flowchart" />
+
+<h2>17.0b n8n calling Narration Studio</h2>
+<p>n8n is the loop. Each stage node calls one Windows step. After plan-slides, render and TTS fan out, then join before compose. PNG / MP3 / MP4 writes stay on <code>ProductionTools</code>. Mermaid source: <code>docs/diagrams/n8n-job.mmd</code>.</p>
+<img class="diagram" src="diagrams/n8n-job.svg" alt="n8n job flowchart calling Narration Studio" />
 
 <h2>17.1 Overall architecture</h2>
 <div class="fig">
@@ -1160,6 +1173,8 @@ dotnet run --project src\NarrationStudio
   docs\
     NarrationStudio-Internal-Workings.html / .pdf   this document
     n8n-service.md / .html / .pdf
+    diagrams\studio-factory.mmd / .svg
+    diagrams\n8n-job.mmd / .svg
     memory-vs-mem0.md / .pdf
     guardrails.md / .pdf
     harness-engineering.md / .pdf
@@ -1199,19 +1214,20 @@ dotnet run --project src\NarrationStudio
 </ul>
 
 <h1 id="s19">19. n8n job service</h1>
-<p>This section is how n8n is used with Narration Studio. Operator YAML and copy-paste compose commands live in <code>docs/n8n-service.pdf</code> (source <code>docs/n8n-service.html</code> / <code>docs/n8n-service.md</code>).</p>
+<p>This section is how n8n is used with Narration Studio. Operator YAML and copy-paste compose commands live in <code>docs/n8n-service.pdf</code> (source <code>docs/n8n-service.html</code> / <code>docs/n8n-service.md</code>). The factory and n8n flowcharts are in §17.0 and <code>docs/diagrams/</code>.</p>
 
 <h2>19.1 Why n8n is outside the factory</h2>
-<p>n8n already runs in Docker on this PC (stack <code>n8n-api_icountera</code>, UI <code>http://localhost:5678</code>). The container cannot browse <code>E:\…</code>. Studio stays a Windows process so ffmpeg, SAPI, and Ollama on <code>localhost:11434</code> keep working. n8n only starts a job, waits, and downloads the MP4. It does not write slides or audio.</p>
-<p>A full run exceeds n8n’s default HTTP timeout, so <code>POST /v1/jobs</code> returns <b>202</b> immediately. <code>JobWorker</code> runs productions one at a time under <code>output/jobs/{jobId}/</code>. Form values overlay <code>appsettings.json</code> defaults via <code>JobOptionsMerger</code>. API keys stay on n8n credentials, not the form.</p>
+<p>n8n already runs in Docker on this PC (stack <code>n8n-api_icountera</code>, UI <code>http://localhost:5678</code>). The container cannot browse <code>E:\…</code>. Studio stays a Windows process so ffmpeg, SAPI, and Ollama on <code>localhost:11434</code> keep working. n8n is the loop: each factory stage is a node. Studio is a sidecar that exposes one HTTP step per <code>ProductionTools</code> method. n8n does not write slides or audio.</p>
+<p><code>POST /v1/sessions</code> allocates <code>output/jobs/{jobId}/</code> and returns <b>201</b> <code>ready</code> without enqueueing <code>JobWorker</code>. Each <code>POST /v1/sessions/{id}/steps/{step}</code> runs one tool. Mutex <code>NarrationStudio.Production</code> is taken except for <code>render</code> and <code>tts</code>, which may overlap. Short steps are synchronous <b>200</b>. <code>plan-slides</code> and <code>tts</code> return <b>202</b> so n8n can Wait-poll <code>steps[step]</code>. Form values overlay <code>appsettings.json</code> defaults via <code>JobOptionsMerger</code>. Sessions force orchestration <code>direct</code>. <code>POST /v1/jobs</code> remains a compatibility run-all. API keys stay on n8n credentials, not the form.</p>
 
 <h2>19.2 How a form submission runs</h2>
 <ol>
   <li>Operator opens the Form Trigger URL and uploads transcript + stub narration (browse). Other fields are pre-filled from <code>appsettings.json</code>.</li>
-  <li>The custom node (<code>n8n-nodes-narration-studio</code>) POSTs JSON to <code>http://host.docker.internal:5088/v1/jobs</code> with real booleans/numbers and file text as <code>transcriptText</code> / <code>stubNarrationText</code>. Form binaries are often named <code>Transcript_file</code> / <code>Stub_narration_file</code>.</li>
-  <li>Studio writes inputs, enqueues the job, returns <code>jobId</code>.</li>
-  <li>The node polls <code>GET /v1/jobs/{id}</code> until <code>complete</code> or <code>failed</code>, then downloads <code>/v1/jobs/{id}/artifacts/merged</code>.</li>
-  <li>Inside the job, <code>ProductionHarness</code> + <code>ProductionTools</code> run exactly as in the CLI. n8n jobs default orchestration to <code>direct</code>.</li>
+  <li>The custom node (<code>n8n-nodes-narration-studio</code>) POSTs JSON to <code>http://host.docker.internal:5088/v1/sessions</code> with real booleans/numbers and file text as <code>transcriptText</code> / <code>stubNarrationText</code>. Form binaries are often named <code>Transcript_file</code> / <code>Stub_narration_file</code>.</li>
+  <li>Studio writes inputs, initializes <code>pipeline-state.json</code>, returns <code>jobId</code> with <code>status: ready</code>.</li>
+  <li>Stage nodes POST <code>/v1/sessions/{id}/steps/{step}</code>. After <code>plan-slides</code>, render and TTS run in parallel. Wait For Step polls <code>GET /v1/jobs/{id}</code> <code>steps[step]</code> until that step is <code>complete</code> or <code>failed</code>.</li>
+  <li>Verify runs <code>HarnessChecks</code>. Success is files on disk plus <code>status == complete</code>, not the coordinator’s last sentence. Then download <code>/v1/jobs/{id}/artifacts/merged</code>.</li>
+  <li>Each step uses scoped DI and <code>ProductionTools</code> exactly as in the CLI. n8n sessions do not use MAF handoff.</li>
 </ol>
 
 <h2>19.3 Docker Compose file (this PC)</h2>
@@ -1235,7 +1251,7 @@ docker compose -p n8n-api_icountera restart n8n</pre>
 <h2>19.3b Job API key</h2>
 <p>There is no generate-key endpoint. Mint a secret in PowerShell, e.g. <code>[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }) -as [byte[]])</code>, or a GUID. Put it in the <b>bin</b> <code>appsettings.json</code> <code>Service:ApiKey</code>, or set <code>$env:Service__ApiKey</code> and restart Studio. Until a key is set, the node may run with no credential. Full click-path: <code>docs/n8n-service.pdf</code> §3.1.</p>
 <p>A <b>Narration Studio API</b> credential is one n8n vault record: <b>Base URL</b> <code>http://host.docker.internal:5088</code> (not <code>localhost</code> inside Docker); <b>API Key</b> = the same string as <code>Service:ApiKey</code>, sent as <code>X-Api-Key</code>; optional ElevenLabs / OpenAI / Azure fields are <i>other</i> headers, not this key. Create it under Credentials → Add credential → search Narration Studio API (mounted node, not public npm). <b>Test</b> calls <code>/health</code> and only proves the URL is up.</p>
-<p>Attach that credential on <b>Start job</b>, <b>Wait until complete</b>, and <b>Download merged video</b>. If only Start job has it, the later nodes get 401. Do not attach it to <b>On form submission</b>. The form is shareable; the job key is server-to-server (n8n encrypts the vault with <code>N8N_ENCRYPTION_KEY</code>). An ElevenLabs key in the <b>API Key</b> field will not unlock TTS and will 401 if it does not match <code>Service:ApiKey</code>. After rotating the Studio key, restart <code>dotnet run</code> and edit the credential.</p>
+<p>Attach that credential on every Narration Studio node except the Form Trigger. If only Create session has it, later stage nodes get 401. Do not attach it to <b>On form submission</b>. The form is shareable; the job key is server-to-server (n8n encrypts the vault with <code>N8N_ENCRYPTION_KEY</code>). An ElevenLabs key in the <b>API Key</b> field will not unlock TTS and will 401 if it does not match <code>Service:ApiKey</code>. After rotating the Studio key, restart <code>dotnet run</code> and edit the credential.</p>
 
 <h2>19.4 What broke on first use</h2>
 <ul>
@@ -1245,7 +1261,7 @@ docker compose -p n8n-api_icountera restart n8n</pre>
 </ul>
 
 <footer class="doc-end">
-  End of document. Revision 4, generated from the Narration Studio source tree as of 22 August 2026. If the code and this PDF diverge, the code wins.
+  End of document. Revision 5, generated from the Narration Studio source tree as of 23 August 2026. If the code and this PDF diverge, the code wins.
 </footer>
 
 </body>

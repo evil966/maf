@@ -1,6 +1,9 @@
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using NarrationStudio.Configuration;
+using NarrationStudio.Hosting;
+using NarrationStudio.Services;
 
 namespace NarrationStudio.Service;
 
@@ -17,6 +20,8 @@ public static class JobEndpoints
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
         app.MapPost("/v1/jobs", CreateJobAsync);
+        app.MapPost("/v1/sessions", CreateSessionAsync);
+        app.MapPost("/v1/sessions/{jobId}/steps/{step}", RunSessionStepAsync);
         app.MapGet("/v1/jobs/{jobId}", GetJob);
         app.MapGet("/v1/jobs/{jobId}/events", GetEvents);
         app.MapGet("/v1/jobs/{jobId}/artifacts/merged", DownloadMerged);
@@ -43,7 +48,12 @@ public static class JobEndpoints
             url,
             job.CreatedAt,
             job.CompletedAt,
-            job.KeepArtifacts);
+            job.KeepArtifacts,
+            job.CurrentStep,
+            job.StepStatus,
+            job.StepResult,
+            job.SnapshotSteps(),
+            job.SnapshotStepErrors());
     }
 
     private static async Task<IResult> CreateJobAsync(
@@ -52,82 +62,90 @@ public static class JobEndpoints
         JobQueue queue,
         IConfiguration configuration)
     {
-        JobRequest request;
-        IFormCollection? form;
-        try
+        var prepared = await PrepareJobAsync(http, configuration, sessionMode: false);
+        if (prepared.Error is not null)
         {
-            (request, form) = await ReadRequestAsync(http);
-        }
-        catch (JsonException ex)
-        {
-            return Results.BadRequest(new { error = "Could not parse job request.", detail = ex.Message });
+            return prepared.Error;
         }
 
-        OverlayCredentialHeaders(http.Request.Headers, request);
-
-        var studioDefaults = configuration.GetSection(StudioOptions.SectionName).Get<StudioOptions>() ?? new StudioOptions();
-        var ollamaDefaults = configuration.GetSection(OllamaOptions.SectionName).Get<OllamaOptions>() ?? new OllamaOptions();
-        var (studio, model) = JobOptionsMerger.Apply(studioDefaults, ollamaDefaults, request);
-        var orchestration = JobOptionsMerger.NormalizeOrchestration(request.Orchestration);
-
-        var outputRoot = JobPaths.ResolveOutputRoot(studioDefaults.OutputDirectory, Directory.GetCurrentDirectory());
-        var jobId = DateTime.Now.ToString("yyyyMMdd_HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
-        var jobDirectory = JobPaths.JobDirectory(outputRoot, jobId);
-        Directory.CreateDirectory(JobPaths.InputsDirectory(jobDirectory));
-
-        var transcriptPath = await SaveUploadOrFallbackAsync(
-            form,
-            ["transcript", "TranscriptPath", "Transcript_file", "Transcript file"],
-            JobPaths.TranscriptFile(jobDirectory),
-            FindDefaultTranscript());
-        if (string.IsNullOrWhiteSpace(transcriptPath))
-        {
-            transcriptPath = WriteTextIfPresent(request.TranscriptText, JobPaths.TranscriptFile(jobDirectory));
-        }
-
-        var stubPath = await SaveUploadOrFallbackAsync(
-            form,
-            ["stubNarration", "stub_narration", "StubNarrationPath", "Stub_narration_file", "Dub_narration_file"],
-            JobPaths.StubNarrationFile(jobDirectory),
-            null);
-        if (string.IsNullOrWhiteSpace(stubPath))
-        {
-            stubPath = WriteTextIfPresent(request.StubNarrationText, JobPaths.StubNarrationFile(jobDirectory));
-        }
-
-        if (string.IsNullOrWhiteSpace(transcriptPath))
-        {
-            return Results.BadRequest(new { error = "Transcript file is required. Upload 'transcript' or place voice_transcript.txt in the Studio working directory." });
-        }
-
-        if (studio.UseStubNarration && string.IsNullOrWhiteSpace(stubPath) && !StubExistsOnDisk(studio, transcriptPath))
-        {
-            return Results.BadRequest(new { error = "Stub narration file is required when UseStubNarration is true. Upload 'stubNarration'." });
-        }
-
-        studio.TranscriptPath = transcriptPath;
-        studio.OutputDirectory = jobDirectory;
-        if (!string.IsNullOrWhiteSpace(stubPath))
-        {
-            studio.StubNarrationPath = stubPath;
-        }
-
-        var job = new ProductionJob
-        {
-            JobId = jobId,
-            Title = string.IsNullOrWhiteSpace(request.Title) ? null : request.Title.Trim(),
-            Orchestration = orchestration,
-            CallbackUrl = string.IsNullOrWhiteSpace(request.CallbackUrl) ? null : request.CallbackUrl.Trim(),
-            KeepArtifacts = request.KeepArtifacts ?? true,
-            Studio = studio,
-            Model = model,
-            OutputDirectory = jobDirectory,
-            TranscriptPath = transcriptPath
-        };
-
+        var job = prepared.Job!;
         store.Add(job);
         await queue.EnqueueAsync(job.JobId);
         return Results.Json(ToStatus(job, PublicBaseUrl(http)), Json, statusCode: StatusCodes.Status202Accepted);
+    }
+
+    private static async Task<IResult> CreateSessionAsync(
+        HttpContext http,
+        JobStore store,
+        IServiceScopeFactory scopes,
+        IConfiguration configuration)
+    {
+        var prepared = await PrepareJobAsync(http, configuration, sessionMode: true);
+        if (prepared.Error is not null)
+        {
+            return prepared.Error;
+        }
+
+        var job = prepared.Job!;
+        using var scope = scopes.CreateScope();
+        var runtime = scope.ServiceProvider.GetRequiredService<RuntimeJobOptions>();
+        runtime.Studio = job.Studio;
+        runtime.Model = job.Model;
+        var pipeline = scope.ServiceProvider.GetRequiredService<PipelineStore>();
+        var tts = scope.ServiceProvider.GetRequiredService<TtsService>();
+        pipeline.Initialize(job.TranscriptPath, job.OutputDirectory);
+        pipeline.WriteRunHeader("session", tts.DescribeProvider(), job.Studio.UseStubNarration, job.Title);
+        job.EventsPath = Path.Combine(pipeline.AgentMemoryDirectory, "events.jsonl");
+        job.Status = "ready";
+        job.StepStatus = "idle";
+        store.Add(job);
+        return Results.Json(ToStatus(job, PublicBaseUrl(http)), Json, statusCode: StatusCodes.Status201Created);
+    }
+
+    private static async Task<IResult> RunSessionStepAsync(
+        string jobId,
+        string step,
+        HttpContext http,
+        JobStore store,
+        StepQueue steps,
+        IServiceScopeFactory scopes)
+    {
+        var job = store.Get(jobId);
+        var evaluation = SessionStepGate.Evaluate(job, step, jobId);
+        if (evaluation.Decision is SessionStepDecision.NotFound)
+        {
+            return Results.NotFound(new { error = evaluation.Error });
+        }
+
+        if (evaluation.Decision is SessionStepDecision.UnknownStep)
+        {
+            return Results.BadRequest(new { error = evaluation.Error });
+        }
+
+        if (evaluation.Decision is SessionStepDecision.NotASession or SessionStepDecision.Busy or SessionStepDecision.AlreadyComplete)
+        {
+            return Results.Conflict(new { error = evaluation.Error });
+        }
+
+        var normalized = evaluation.Step!;
+        job!.MarkStepStarted(normalized, SessionSteps.IsAsync(normalized) ? "queued" : "running");
+
+        if (SessionSteps.IsAsync(normalized))
+        {
+            await steps.EnqueueAsync(new SessionStepWork(job.JobId, normalized));
+            return Results.Json(ToStatus(job, PublicBaseUrl(http)), Json, statusCode: StatusCodes.Status202Accepted);
+        }
+
+        try
+        {
+            await SessionStepRunner.RunAsync(job, normalized, scopes, http.RequestAborted);
+        }
+        catch (Exception)
+        {
+            return Results.Json(ToStatus(job, PublicBaseUrl(http)), Json, statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return Results.Json(ToStatus(job, PublicBaseUrl(http)), Json);
     }
 
     private static IResult GetJob(string jobId, HttpContext http, JobStore store)
@@ -176,6 +194,86 @@ public static class JobEndpoints
         }
 
         return Results.File(bytes, "video/mp4", fileName);
+    }
+
+    private static async Task<(ProductionJob? Job, IResult? Error)> PrepareJobAsync(
+        HttpContext http,
+        IConfiguration configuration,
+        bool sessionMode)
+    {
+        JobRequest request;
+        IFormCollection? form;
+        try
+        {
+            (request, form) = await ReadRequestAsync(http);
+        }
+        catch (JsonException ex)
+        {
+            return (null, Results.BadRequest(new { error = "Could not parse job request.", detail = ex.Message }));
+        }
+
+        OverlayCredentialHeaders(http.Request.Headers, request);
+
+        var studioDefaults = configuration.GetSection(StudioOptions.SectionName).Get<StudioOptions>() ?? new StudioOptions();
+        var ollamaDefaults = configuration.GetSection(OllamaOptions.SectionName).Get<OllamaOptions>() ?? new OllamaOptions();
+        var (studio, model) = JobOptionsMerger.Apply(studioDefaults, ollamaDefaults, request);
+        var orchestration = sessionMode ? "direct" : JobOptionsMerger.NormalizeOrchestration(request.Orchestration);
+
+        var outputRoot = JobPaths.ResolveOutputRoot(studioDefaults.OutputDirectory, Directory.GetCurrentDirectory());
+        var jobId = DateTime.Now.ToString("yyyyMMdd_HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
+        var jobDirectory = JobPaths.JobDirectory(outputRoot, jobId);
+        Directory.CreateDirectory(JobPaths.InputsDirectory(jobDirectory));
+
+        var transcriptPath = await SaveUploadOrFallbackAsync(
+            form,
+            ["transcript", "TranscriptPath", "Transcript_file", "Transcript file"],
+            JobPaths.TranscriptFile(jobDirectory),
+            FindDefaultTranscript());
+        if (string.IsNullOrWhiteSpace(transcriptPath))
+        {
+            transcriptPath = WriteTextIfPresent(request.TranscriptText, JobPaths.TranscriptFile(jobDirectory));
+        }
+
+        var stubPath = await SaveUploadOrFallbackAsync(
+            form,
+            ["stubNarration", "stub_narration", "StubNarrationPath", "Stub_narration_file", "Dub_narration_file"],
+            JobPaths.StubNarrationFile(jobDirectory),
+            null);
+        if (string.IsNullOrWhiteSpace(stubPath))
+        {
+            stubPath = WriteTextIfPresent(request.StubNarrationText, JobPaths.StubNarrationFile(jobDirectory));
+        }
+
+        if (string.IsNullOrWhiteSpace(transcriptPath))
+        {
+            return (null, Results.BadRequest(new { error = "Transcript file is required. Upload 'transcript' or place voice_transcript.txt in the Studio working directory." }));
+        }
+
+        if (studio.UseStubNarration && string.IsNullOrWhiteSpace(stubPath) && !StubExistsOnDisk(studio, transcriptPath))
+        {
+            return (null, Results.BadRequest(new { error = "Stub narration file is required when UseStubNarration is true. Upload 'stubNarration'." }));
+        }
+
+        studio.TranscriptPath = transcriptPath;
+        studio.OutputDirectory = jobDirectory;
+        if (!string.IsNullOrWhiteSpace(stubPath))
+        {
+            studio.StubNarrationPath = stubPath;
+        }
+
+        return (new ProductionJob
+        {
+            JobId = jobId,
+            Title = string.IsNullOrWhiteSpace(request.Title) ? null : request.Title.Trim(),
+            Orchestration = orchestration,
+            CallbackUrl = string.IsNullOrWhiteSpace(request.CallbackUrl) ? null : request.CallbackUrl.Trim(),
+            KeepArtifacts = request.KeepArtifacts ?? true,
+            SessionMode = sessionMode,
+            Studio = studio,
+            Model = model,
+            OutputDirectory = jobDirectory,
+            TranscriptPath = transcriptPath
+        }, null);
     }
 
     private static async Task<(JobRequest Request, IFormCollection? Form)> ReadRequestAsync(HttpContext http)
@@ -394,4 +492,9 @@ public sealed record JobStatusResponse(
     string? MergedVideoUrl,
     DateTimeOffset CreatedAt,
     DateTimeOffset? CompletedAt,
-    bool KeepArtifacts);
+    bool KeepArtifacts,
+    string? CurrentStep,
+    string? StepStatus,
+    string? StepResult,
+    IReadOnlyDictionary<string, string> Steps,
+    IReadOnlyDictionary<string, string> StepErrors);

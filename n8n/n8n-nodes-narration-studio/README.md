@@ -1,6 +1,8 @@
 # n8n node: Narration Studio
 
-Community node for the Windows Narration Studio job API. This package lives in this repo. It is **not** on the public npm registry — do not use n8n’s **Install community nodes** dialog for this name.
+Community node for the Windows Narration Studio session and job API. This package lives in this repo. It is **not** on the public npm registry — do not use n8n’s **Install community nodes** dialog for this name.
+
+The sample workflow is n8n as the loop: Form → Create Session → Rewrite → Segment → Plan Slides → Wait → Render and TTS in parallel → Join → Compose → Merge → Verify → Download. Windows `ProductionTools` still writes every PNG / MP3 / MP4. **Start Job** remains as a compatibility “run all” against `POST /v1/jobs`.
 
 Printable operator guide (including Docker Compose YAML): `docs/n8n-service.pdf`. Architecture: `docs/NarrationStudio-Internal-Workings.pdf` §19.
 
@@ -14,7 +16,7 @@ Printable operator guide (including Docker Compose YAML): `docs/n8n-service.pdf`
 | API Key | Same string as Studio `Service:ApiKey`; sent as `X-Api-Key` |
 | ElevenLabs / OpenAI / Azure | Other headers. Not `Service:ApiKey` |
 
-Create it: Credentials → Add credential → **Narration Studio API**. **Test** hits `/health` (does not prove the job key). Attach the same record on **Start job**, **Wait until complete**, and **Download merged video**. Do not attach it to the Form Trigger. If only Start job has it, Wait/Download return 401.
+Create it: Credentials → Add credential → **Narration Studio API**. **Test** hits `/health` (does not prove the job key). Attach the same record on every Narration Studio node except the Form Trigger (Create Session, each stage, Wait, Download). Do not attach it to the Form Trigger. If only Create Session has it, later stage nodes return 401.
 
 With no credential selected the node still calls `http://host.docker.internal:5088`. That works while `Service:ApiKey` is empty. After you set a key: restart Studio, paste the same string into the credential, save the workflow. Full click-path: `docs/n8n-service.pdf` §3.1.
 
