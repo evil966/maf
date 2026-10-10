@@ -1,2 +1,2 @@
-ElevenLabs API Key: sk_a905cf2d66efc20c0718b45272233eb5a3af12f2d017c669
+ElevenLabs API Key: 
 Voice ID: UPXQvvSDDubCtocmbltQ
